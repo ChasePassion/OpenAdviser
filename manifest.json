@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "OpenAdviser",
-  "version": "1.0.3",
-  "description": "Let local AI agents consult web AI providers from background tabs.",
+  "version": "1.0.5",
+  "description": "Let local AI agents consult web AI providers from a visible active Chrome worker window.",
   "minimum_chrome_version": "116",
   "permissions": [
     "alarms",

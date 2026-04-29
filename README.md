@@ -2,7 +2,7 @@
 
 OpenAdviser lets local AI agents ask web AI products like ChatGPT and Grok through your logged-in browser session.
 
-It is built for agents that need a second opinion, current web-facing research, or a strategy review without using provider APIs, CDP, or a foreground browser takeover.
+It is built for agents that need a second opinion, current web-facing research, or a strategy review without using provider APIs, CDP, or taking over the user's main browser tab.
 
 [![npm](https://img.shields.io/npm/v/openadviser?style=flat-square)](https://www.npmjs.com/package/openadviser)
 [![release](https://img.shields.io/github/v/release/ChasePassion/OpenAdviser?style=flat-square)](https://github.com/ChasePassion/OpenAdviser/releases)
@@ -12,7 +12,7 @@ It is built for agents that need a second opinion, current web-facing research, 
 
 OpenAdviser gives your local tools a small HTTP bridge and a Chrome extension:
 
-- `send` opens a new background provider tab and submits a prompt.
+- `send` opens a new provider tab in a small OpenAdviser worker window and submits a prompt.
 - `read` returns the current answer snapshot for that run.
 - `wait` polls `read` until the answer is complete or a timeout is reached. It uses full-read mode by default.
 
@@ -35,8 +35,11 @@ Before calling `send`, `read`, or `wait`, make sure:
 - The OpenAdviser extension is loaded and enabled.
 - The selected provider tab can reach the network normally.
 - You are logged in to the selected provider, such as ChatGPT or Grok.
+- The OpenAdviser worker window is not minimized or fully covered. ChatGPT and Grok can stall or render partial answers when their tab is hidden.
 
-If Chrome is not running, `openadviser send`, `openadviser read`, and `openadviser wait` fail fast with a message asking the user to open Chrome. If the provider website is offline, blocked, logged out, or stuck behind verification, the agent should stop and ask the human operator to restore Chrome/network/provider access before retrying.
+If Chrome is not running, `openadviser send`, `openadviser read`, and `openadviser wait` fail fast with a message asking the user to open Chrome. If the provider website is offline, blocked, logged out, hidden, minimized, or stuck behind verification, the agent should stop and ask the human operator to restore Chrome/network/provider access before retrying.
+
+OpenAdviser intentionally uses a visible worker window instead of an ordinary background tab. Long ChatGPT/Grok answers may not start, continue, or fully render in a hidden tab even when Chrome Memory Saver is disabled. The worker tab is active in its own window so the provider page stays on the normal visible-page rendering path while the user keeps working in another window.
 
 ## Installation
 
@@ -123,7 +126,7 @@ If provider login or extension loading is not already complete, ask the human op
 
 Start by assuming the user has installed the CLI, installed the `openadviser` skill globally, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
 
-Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, and verify provider login.
+Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, keep the OpenAdviser worker window visible, and verify provider login.
 
 When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, reads answer snapshots, and waits for completion when requested.
 
@@ -141,7 +144,7 @@ openadviser wait --run-id "$run_id" --provider grok --text > adviser-result.txt 
 
 Use `read` manually when the agent wants a single snapshot and will decide itself whether to wait longer.
 
-Use `read --full` when a background provider tab has only mounted part of a long answer in the DOM:
+Use `read --full` when a provider page has only mounted part of a long answer in the DOM:
 
 ```bash
 openadviser read --run-id "$run_id" --full --text
@@ -205,6 +208,9 @@ Useful flags:
 - `--interval <ms>`: poll interval for `wait`.
 - `--page-load-timeout <ms>`: soft page-load wait before injection continues.
 - `--input-timeout <ms>`: provider composer wait timeout.
+- `--window-left <px>`, `--window-top <px>`: OpenAdviser worker window position for new provider windows.
+- `--window-width <px>`, `--window-height <px>`: OpenAdviser worker window size. Default `560x520`.
+- `--focus-window`: focus the worker window when it is created. Default is not to focus it.
 - `--read-timeout <ms>`: provider page read timeout.
 - `--read-task-timeout <ms>`: per-read bridge task timeout for `wait`.
 - `--full`: hydrate rendered content and use the provider Copy response button before DOM fallback.
@@ -242,7 +248,7 @@ For local development, load the repository root directly in `chrome://extensions
 bin/openadviser.js            npm CLI entry
 bridge/client.js              provider-aware CLI implementation
 bridge/server.js              local provider-aware task queue
-src/background.js             extension task runner and provider registry
+src/background.js             extension task runner, provider registry, and worker window manager
 src/content/provider.js       generic isolated-world bridge
 src/content/chatgpt-page.js   ChatGPT page automation provider
 src/content/grok-page.js      Grok page automation provider
@@ -253,7 +259,7 @@ scripts/package-extension.js  extension zip packager
 Boundary rules:
 
 - The HTTP bridge does not know provider DOM details.
-- The service worker owns provider defaults and background tab creation.
+- The service worker owns provider defaults and visible worker window creation.
 - Page automation is provider-specific.
 - Adding a provider should only require a provider registry entry, manifest host permission, and a page automation script.
 - The local bridge listens on `127.0.0.1` by default. Do not expose it to a LAN or the public internet.

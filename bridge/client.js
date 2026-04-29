@@ -66,7 +66,12 @@ async function send(args) {
   const options = {
     pageLoadTimeoutMs: numberFlag(flags["page-load-timeout"], undefined),
     inputTimeoutMs: numberFlag(flags["input-timeout"], undefined),
-    pageUrl: flags.url && flags.url !== true ? String(flags.url) : undefined
+    pageUrl: flags.url && flags.url !== true ? String(flags.url) : undefined,
+    workerWindowLeft: numberFlag(flags["window-left"], undefined),
+    workerWindowTop: numberFlag(flags["window-top"], undefined),
+    workerWindowWidth: numberFlag(flags["window-width"], undefined),
+    workerWindowHeight: numberFlag(flags["window-height"], undefined),
+    focusWorkerWindow: Boolean(flags["focus-window"])
   };
 
   stripUndefined(options);
@@ -461,6 +466,11 @@ Options:
   --url <url>                 Provider URL to open for send. Default: provider setting.
   --page-load-timeout <ms>    Max soft wait for provider page load before continuing.
   --input-timeout <ms>        Provider composer wait timeout inside the extension.
+  --window-left <px>          OpenAdviser worker window left edge. Default: 24
+  --window-top <px>           OpenAdviser worker window top edge. Default: 24
+  --window-width <px>         OpenAdviser worker window width. Default: 560
+  --window-height <px>        OpenAdviser worker window height. Default: 520
+  --focus-window              Focus the worker window when creating it. Default: false
   --run-id <id>               Run id to read.
   --full                      Hydrate rendered content and use the provider Copy response button before DOM fallback.
   --copy-button               On read, also try the provider's Copy response button.

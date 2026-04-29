@@ -114,7 +114,9 @@
       title: document.title,
       meta: {
         elapsedMs: Date.now() - startedAt,
-        promptPreview: runState.promptPreview
+        promptPreview: runState.promptPreview,
+        visibilityState: document.visibilityState,
+        hasFocus: document.hasFocus()
       }
     };
   }
@@ -193,7 +195,9 @@
         fallbackPreview: preview(fallbackText),
         assistantCount: assistantMessages.length,
         runStateFound: Boolean(runState),
-        hydrated
+        hydrated,
+        visibilityState: document.visibilityState,
+        hasFocus: document.hasFocus()
       }
     };
 

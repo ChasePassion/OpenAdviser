@@ -222,6 +222,14 @@ function sendViaOpenAdviser(prompt, flags) {
   if (flags["input-timeout"]) {
     args.push("--input-timeout", String(numberFlag(flags["input-timeout"], 60000)));
   }
+  for (const optionName of ["window-left", "window-top", "window-width", "window-height"]) {
+    if (flags[optionName]) {
+      args.push(`--${optionName}`, String(numberFlag(flags[optionName], 0)));
+    }
+  }
+  if (flags["focus-window"]) {
+    args.push("--focus-window");
+  }
   return runOpenAdviser(args, prompt, flags);
 }
 
@@ -453,6 +461,11 @@ Options:
   --interval <ms>              Poll interval for wait. Default: 5000
   --page-load-timeout <ms>     Max soft wait for provider page load before continuing. Default: ${DEFAULT_PAGE_LOAD_TIMEOUT_MS}
   --input-timeout <ms>         Provider composer wait timeout before send.
+  --window-left <px>           OpenAdviser worker window left edge.
+  --window-top <px>            OpenAdviser worker window top edge.
+  --window-width <px>          OpenAdviser worker window width.
+  --window-height <px>         OpenAdviser worker window height.
+  --focus-window               Focus the worker window when creating it.
   --run-id <id>                Adviser run id to read.
   --full                       Hydrate rendered content and use provider Copy response before DOM fallback.
   --read-timeout <ms>          Page read timeout. Default: 15000

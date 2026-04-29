@@ -19,6 +19,7 @@ The human user must have:
 2. Started the bridge: `openadviser server`
 3. Loaded the Chrome extension from `openadviser extension-path`
 4. Logged in to the selected provider in Chrome
+5. Kept the OpenAdviser worker window visible, not minimized or fully covered
 
 If the bridge is not already running, `scripts/openadviser.js` tries to start it automatically.
 
@@ -155,6 +156,8 @@ cat ./adviser-context.md | node path/to/skills/openadviser/scripts/openadviser.j
 
 The `send` command starts the local bridge if needed, submits the prompt to the selected web AI provider, and prints a bridge task JSON containing `result.runId`. It does not wait for the answer.
 
+`send` opens a new provider tab in the OpenAdviser worker window. This is intentional: ChatGPT and Grok can stall or render partial answers when their tab is hidden, even when Chrome Memory Saver is disabled. The worker tab must remain active and visible in its own window. If a run stays `waiting` or `streaming` for about 3 minutes with no progress, check whether the worker window is minimized, fully covered, offline, logged out, or blocked by provider verification.
+
 Read the current answer snapshot later:
 
 ```bash
@@ -207,6 +210,9 @@ Rules for this use case:
 - `--interval <ms>`: Poll interval for `wait`. Default `5000`.
 - `--page-load-timeout <ms>`: Soft provider page-load wait before continuing to inject/send. Default `15000`.
 - `--input-timeout <ms>`: Provider composer wait timeout before send.
+- `--window-left <px>` / `--window-top <px>`: Worker window position for newly created provider windows.
+- `--window-width <px>` / `--window-height <px>`: Worker window size.
+- `--focus-window`: Focus the worker window when creating it. Default is not to focus it.
 - `--run-id <id>`: Run id returned by `send`; required for `read`.
 - `--full`: Hydrate rendered content and use provider Copy response before DOM fallback.
 - `--read-timeout <ms>`: Page read timeout. Default `15000`.

@@ -19,6 +19,12 @@ const BRIDGE_ALARM_NAME = "web-ai-bridge";
 const DEFAULT_INPUT_TIMEOUT_MS = 60000;
 const DEFAULT_PAGE_LOAD_WAIT_MS = 15000;
 const CONTENT_SCRIPT_READY_TIMEOUT_MS = 20000;
+const DEFAULT_WORKER_WINDOW = {
+  left: 24,
+  top: 24,
+  width: 560,
+  height: 520
+};
 
 let bridgeDrainPromise = null;
 let currentRun = null;
@@ -134,6 +140,8 @@ async function sendPrompt(prompt, options = {}) {
       provider: provider.id,
       runId: response.runId || runId,
       tabId,
+      windowId: tab.windowId || null,
+      windowMode: runOptions.windowMode,
       url: response.url || tab.url || null,
       title: response.title || tab.title || null,
       sentAt: response.sentAt || completedAt,
@@ -158,6 +166,8 @@ async function sendPrompt(prompt, options = {}) {
       tabId,
       url: result.url,
       title: result.title,
+      windowId: result.windowId,
+      windowMode: result.windowMode,
       source: runOptions.source
     });
     await setBadge("SENT", "#16a34a", 5000);
@@ -212,6 +222,7 @@ async function readRunResult(run, options = {}) {
 
   await setBadge("READ", "#7c3aed");
   try {
+    const activeTab = await ensureRunTabActive(tabId);
     await ensureContentScriptReady(tabId, CONTENT_SCRIPT_READY_TIMEOUT_MS);
     const response = await readProviderResult(tabId, readOptions);
     if (!response || response.ok !== true) {
@@ -224,6 +235,9 @@ async function readRunResult(run, options = {}) {
       provider: provider.id,
       runId,
       tabId,
+      windowId: activeTab.windowId || null,
+      windowState: activeTab.windowState || null,
+      tabActive: activeTab.active === true,
       status: response.status,
       complete: response.complete === true,
       text: response.text || "",
@@ -247,6 +261,9 @@ async function readRunResult(run, options = {}) {
       provider: provider.id,
       runId,
       tabId,
+      windowId: result.windowId,
+      windowState: result.windowState,
+      tabActive: result.tabActive,
       status: result.status,
       complete: result.complete,
       textLength: result.textLength,
@@ -286,6 +303,14 @@ function normalizeRunOptions(provider, options) {
     providerLabel: provider.label,
     source: options.source || "bridge",
     pageUrl,
+    windowMode: "visible-worker",
+    focusWorkerWindow: Boolean(options.focusWorkerWindow),
+    workerWindow: {
+      left: clampNumber(options.workerWindowLeft, -10000, 10000, DEFAULT_WORKER_WINDOW.left),
+      top: clampNumber(options.workerWindowTop, -10000, 10000, DEFAULT_WORKER_WINDOW.top),
+      width: clampNumber(options.workerWindowWidth, 320, 2400, DEFAULT_WORKER_WINDOW.width),
+      height: clampNumber(options.workerWindowHeight, 240, 1800, DEFAULT_WORKER_WINDOW.height)
+    },
     pageLoadTimeoutMs: clampNumber(options.pageLoadTimeoutMs, 3000, 120000, DEFAULT_PAGE_LOAD_WAIT_MS),
     inputTimeoutMs: clampNumber(options.inputTimeoutMs, 10000, 180000, DEFAULT_INPUT_TIMEOUT_MS)
   };
@@ -305,10 +330,127 @@ function normalizeReadOptions(provider, options) {
 }
 
 async function openProviderTab(options) {
-  return chrome.tabs.create({
+  const worker = await ensureProviderWorkerWindow(options);
+  if (worker.tab) {
+    await rememberProviderWorkerWindow(options.provider, worker.tab.windowId || worker.window.id);
+    return {
+      ...worker.tab,
+      openadviserWindowMode: options.windowMode
+    };
+  }
+
+  const tab = await chrome.tabs.create({
+    windowId: worker.window.id,
     url: options.pageUrl,
-    active: false
+    active: true
   });
+  await rememberProviderWorkerWindow(options.provider, tab.windowId || worker.window.id);
+  return {
+    ...tab,
+    openadviserWindowMode: options.windowMode
+  };
+}
+
+async function ensureProviderWorkerWindow(options) {
+  const existingWindowId = await getProviderWorkerWindowId(options.provider);
+  const existingWindow = await getUsableWorkerWindow(existingWindowId);
+  if (existingWindow) {
+    if (existingWindow.state === "minimized") {
+      await chrome.windows.update(existingWindow.id, { state: "normal" });
+    }
+    return {
+      window: existingWindow,
+      tab: null
+    };
+  }
+
+  const created = await chrome.windows.create({
+    url: options.pageUrl,
+    type: "popup",
+    focused: options.focusWorkerWindow === true,
+    left: options.workerWindow.left,
+    top: options.workerWindow.top,
+    width: options.workerWindow.width,
+    height: options.workerWindow.height
+  });
+  await rememberProviderWorkerWindow(options.provider, created.id);
+  return {
+    window: created,
+    tab: Array.isArray(created.tabs) ? created.tabs[0] || null : null
+  };
+}
+
+async function ensureRunTabActive(tabId) {
+  const tab = await chrome.tabs.get(tabId);
+  let windowState = null;
+  if (Number.isFinite(tab.windowId)) {
+    const windowInfo = await getWindowSafe(tab.windowId);
+    windowState = windowInfo?.state || null;
+    if (windowInfo && windowInfo.state === "minimized") {
+      const restored = await chrome.windows.update(tab.windowId, { state: "normal" });
+      windowState = restored?.state || "normal";
+    }
+  }
+
+  if (tab.active !== true) {
+    const updated = await chrome.tabs.update(tabId, { active: true });
+    return {
+      ...updated,
+      windowState
+    };
+  }
+
+  return {
+    ...tab,
+    windowState
+  };
+}
+
+async function getProviderWorkerWindowId(providerId) {
+  const stored = await chrome.storage.local.get(["providerWindows"]);
+  const providerWindows = stored.providerWindows || {};
+  const record = providerWindows[providerId];
+  const windowId = Number(record && record.windowId);
+  return Number.isFinite(windowId) ? windowId : null;
+}
+
+async function rememberProviderWorkerWindow(providerId, windowId) {
+  if (!Number.isFinite(Number(windowId))) {
+    return;
+  }
+  const stored = await chrome.storage.local.get(["providerWindows"]);
+  const providerWindows = stored.providerWindows || {};
+  providerWindows[providerId] = {
+    windowId: Number(windowId),
+    type: "openadviser-worker-window",
+    updatedAt: new Date().toISOString()
+  };
+  await chrome.storage.local.set({ providerWindows });
+}
+
+async function getUsableWorkerWindow(windowId) {
+  if (!Number.isFinite(Number(windowId))) {
+    return null;
+  }
+  const windowInfo = await getWindowSafe(Number(windowId));
+  if (!windowInfo) {
+    return null;
+  }
+  if (windowInfo.type !== "popup") {
+    return null;
+  }
+  return windowInfo;
+}
+
+async function getWindowSafe(windowId) {
+  if (!Number.isFinite(Number(windowId))) {
+    return null;
+  }
+  try {
+    return await chrome.windows.get(Number(windowId));
+  } catch (error) {
+    return null;
+  }
 }
 
 async function waitForTabCompleteOrDelay(tabId, timeoutMs) {
