@@ -40,7 +40,7 @@ npm install -g openadviser
 2. Install the OpenAdviser skill globally with the skills CLI.
 
 ```bash
-npx skills add ChasePassion/OpenAdviser --skill openadviser --agent '*' --global --yes
+npx skills add ChasePassion/OpenAdviser --global --all
 ```
 
 This follows the OpenCLI-style skills workflow: the skill lives in `skills/openadviser/` in this repo, and the installer creates a global symlink unless you choose a copy-based install.
@@ -133,7 +133,6 @@ Keep context factual. Separate known facts, assumptions, your current judgement,
 ```text
 skills/openadviser/
 ├── SKILL.md
-├── agents/openai.yaml
 ├── references/
 │   ├── adviser-strategy.md
 │   └── context-brief-method.md
@@ -145,7 +144,7 @@ The skill name is `openadviser`.
 Install it globally:
 
 ```bash
-npx skills add ChasePassion/OpenAdviser --skill openadviser --agent '*' --global --yes
+npx skills add ChasePassion/OpenAdviser --global --all
 ```
 
 ## CLI
