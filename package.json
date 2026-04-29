@@ -1,0 +1,47 @@
+{
+  "name": "openadviser",
+  "version": "0.2.0",
+  "description": "Open-source adviser bridge that lets local AI agents consult ChatGPT, Grok, and other web AI providers through a Chrome extension.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChasePassion/OpenAdviser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ChasePassion/OpenAdviser/issues"
+  },
+  "homepage": "https://github.com/ChasePassion/OpenAdviser#readme",
+  "bin": {
+    "openadviser": "bin/openadviser.js"
+  },
+  "files": [
+    "bin/",
+    "bridge/",
+    "scripts/",
+    "src/",
+    "manifest.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "openadviser",
+    "ai-agent",
+    "advisor",
+    "adviser",
+    "chatgpt",
+    "grok",
+    "chrome-extension",
+    "browser-automation"
+  ],
+  "scripts": {
+    "check": "node --check src/background.js && node --check src/content/provider.js && node --check src/content/chatgpt-page.js && node --check src/content/grok-page.js && node --check bridge/server.js && node --check bridge/client.js",
+    "package:extension": "node scripts/package-extension.js",
+    "prepack": "npm run check && npm run package:extension",
+    "server": "node bridge/server.js",
+    "send": "node bridge/client.js send",
+    "read": "node bridge/client.js read"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "OpenAdviser",
+  "version": "0.2.0",
+  "description": "Let local AI agents consult web AI providers from background tabs.",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://grok.com/*",
+    "http://127.0.0.1:8787/*",
+    "http://localhost:8787/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/content/chatgpt-page.js",
+        "src/content/grok-page.js"
+      ],
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://grok.com/*"
+      ]
+    }
+  ],
+  "action": {
+    "default_title": "Wake OpenAdviser"
+  }
+}
