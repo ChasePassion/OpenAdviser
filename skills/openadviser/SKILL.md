@@ -32,7 +32,7 @@ If the bridge is not already running, `scripts/openadviser.js` tries to start it
 6. Add anti-bias context when useful: the best argument against the caller's preferred approach, what is not verified, and what would change the decision.
 7. Exclude skill catalogs, encrypted reasoning, hidden system text, raw transcript dumps, and low-signal tool chatter.
 8. Ask one focused adviser question with a decision frame.
-9. Run the OpenAdviser command in a background terminal/session, send the context brief plus question with `scripts/openadviser.js send`, continue non-dependent work while the web provider responds, then read snapshots with `scripts/openadviser.js read`.
+9. Send the context brief plus question with `scripts/openadviser.js send`, capture `result.runId`, then run `scripts/openadviser.js wait --run-id <runId>` in a background terminal/session while continuing non-dependent work. Use `read` only when a single manual snapshot is needed.
 10. Treat the answer as advice, not authority; reconcile it against primary evidence and continue locally.
 
 Before first use, or whenever context quality is uncertain, read `references/context-brief-method.md`. For the design rationale and local limitations, read `references/adviser-strategy.md`.
@@ -123,14 +123,14 @@ For broad research requests such as `调研 skills`, do not brief the adviser as
 
 ## Background Terminal Use
 
-OpenAdviser calls can take a long time because they depend on a live browser, network health, provider page load, web search, and model response time. Run the command on a background terminal/session whenever the answer is not an immediate blocker.
+OpenAdviser answers can take a long time because they depend on a live browser, network health, provider page load, web search, and model response time. Do not run `send` in the background just to wait for the answer: `send` returns quickly after submitting the prompt. Run `wait` in a background terminal/session whenever the answer is not an immediate blocker.
 
 Recommended agent flow:
 
-1. Start `send` in a background terminal/session.
-2. Capture the returned `result.runId`.
+1. Run `send` in the foreground and capture the returned `result.runId`.
+2. Start `wait --run-id <runId> --json` in a background terminal/session, redirecting output to a file if useful.
 3. Continue local work that does not depend on the adviser answer.
-4. Later poll `read --run-id <runId> --json`; if the status is `waiting` or `streaming`, wait and poll again.
+4. Later inspect the `wait` output, or call `read --run-id <runId> --json` for a manual snapshot.
 5. Integrate the adviser result only after checking it against the local evidence and constraints.
 
 ## Commands
@@ -161,7 +161,21 @@ Read the current answer snapshot later:
 node path/to/skills/openadviser/scripts/openadviser.js read --run-id <runId> --json
 ```
 
-Call `read` repeatedly after waiting if `result.status` is `waiting` or `streaming`. The caller decides whether the current answer is complete enough. The script does not use the clipboard unless `--copy-button` is explicitly passed.
+Wait until the answer is complete:
+
+```bash
+node path/to/skills/openadviser/scripts/openadviser.js wait --run-id <runId> --json
+```
+
+Run `wait` in a background terminal/session when the adviser answer is not the immediate blocker. It polls `read` until `result.status` is `complete` or the timeout is reached. `wait` uses full-read mode by default: it hydrates lazy-rendered answer content and, when available, uses the provider's own Copy response button inside the page to capture full text without requiring the agent or user to touch the system clipboard.
+
+Use `read --full` for one manual full snapshot:
+
+```bash
+node path/to/skills/openadviser/scripts/openadviser.js read --run-id <runId> --full --json
+```
+
+Use plain `read` when a quick DOM snapshot is enough and the caller will decide whether to wait longer.
 
 The built-in adviser prompt tells the web AI provider: "Before answering, first analyze your task, examine the problem structure from multiple angles, then search the web for relevant information to support your judgment."
 
@@ -189,11 +203,16 @@ Rules for this use case:
 - `--strict-context`: Fail before sending if core compact/adviser signals are missing.
 - `--json`: Print the full bridge task object.
 - `--timeout <ms>`: Atomic bridge action wait timeout. Default `120000`.
+  - For `wait`, total wait timeout. Default `600000`.
+- `--interval <ms>`: Poll interval for `wait`. Default `5000`.
 - `--page-load-timeout <ms>`: Soft provider page-load wait before continuing to inject/send. Default `15000`.
 - `--input-timeout <ms>`: Provider composer wait timeout before send.
 - `--run-id <id>`: Run id returned by `send`; required for `read`.
+- `--full`: Hydrate rendered content and use provider Copy response before DOM fallback.
 - `--read-timeout <ms>`: Page read timeout. Default `15000`.
+- `--read-task-timeout <ms>`: Per-read bridge task timeout for `wait`. Default `120000`.
 - `--copy-button`: On `read`, also try the provider's Copy response button. Default is DOM extraction only.
+- `--no-full`: Disable `wait`'s default full-read mode.
 - `--openadviser-bin <command>`: OpenAdviser executable. Default `openadviser`.
 
 ## Adviser Question Style

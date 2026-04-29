@@ -1,6 +1,6 @@
 {
   "name": "openadviser",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Open-source adviser bridge that lets local AI agents consult ChatGPT, Grok, and other web AI providers through a Chrome extension.",
   "license": "MIT",
   "repository": {

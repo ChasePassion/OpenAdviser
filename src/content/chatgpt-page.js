@@ -131,8 +131,14 @@
     );
     const useCopyButton = Boolean(options.useCopyButton);
     const stableMs = clampNumber(options.stableMs, 1000, 15000, 3000);
-    const assistantMessages = getAssistantMessages();
-    const candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    let assistantMessages = getAssistantMessages();
+    let candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    const hydrated = Boolean(options.hydrateRenderedContent && candidate);
+    if (hydrated) {
+      await hydrateRenderedMessage(candidate, options);
+      assistantMessages = getAssistantMessages();
+      candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    }
     const domText = candidate ? extractMessageText(candidate) : "";
     const fallbackText = candidate ? "" : extractBodyAnswerFallback(options, runState);
     const hasResponseActions = candidate ? hasAssistantCompletionMarker(candidate) : false;
@@ -186,7 +192,8 @@
         latestAssistantPreview: preview(domText),
         fallbackPreview: preview(fallbackText),
         assistantCount: assistantMessages.length,
-        runStateFound: Boolean(runState)
+        runStateFound: Boolean(runState),
+        hydrated
       }
     };
 
@@ -233,6 +240,66 @@
       return "streaming";
     }
     return "complete";
+  }
+
+  async function hydrateRenderedMessage(node, options = {}) {
+    const turn = assistantTurnContainer(node) || node;
+    const scrollRoot = findScrollRoot(turn);
+    const stepDelayMs = clampNumber(options.hydrateStepDelayMs, 50, 1000, 150);
+    const maxSteps = clampNumber(options.hydrateMaxSteps, 3, 80, 24);
+
+    await scrollElementIntoView(turn, "start", stepDelayMs);
+    await scrollThroughElement(turn, scrollRoot, stepDelayMs, maxSteps);
+    await scrollElementIntoView(turn, "end", stepDelayMs);
+  }
+
+  async function scrollElementIntoView(element, block, delayMs) {
+    try {
+      element.scrollIntoView({ block, inline: "nearest" });
+    } catch (error) {
+      element.scrollIntoView();
+    }
+    await delay(delayMs);
+  }
+
+  async function scrollThroughElement(element, scrollRoot, delayMs, maxSteps) {
+    if (!element || !scrollRoot) {
+      return;
+    }
+
+    const rootRect = scrollRoot === document.scrollingElement
+      ? { top: 0, height: window.innerHeight }
+      : scrollRoot.getBoundingClientRect();
+    const startTop = scrollRoot.scrollTop + element.getBoundingClientRect().top - rootRect.top - 80;
+    const elementHeight = Math.max(element.scrollHeight, element.getBoundingClientRect().height, 1);
+    const viewportHeight = Math.max(rootRect.height || window.innerHeight, 200);
+    const step = Math.max(160, Math.floor(viewportHeight * 0.75));
+    const steps = Math.min(maxSteps, Math.ceil(elementHeight / step) + 1);
+
+    for (let index = 0; index <= steps; index += 1) {
+      scrollRoot.scrollTop = Math.max(0, startTop + index * step);
+      window.dispatchEvent(new Event("scroll"));
+      document.dispatchEvent(new Event("scroll"));
+      await delay(delayMs);
+    }
+  }
+
+  function findScrollRoot(node) {
+    const explicit = document.querySelector("[data-scroll-root]");
+    if (explicit) {
+      return explicit;
+    }
+
+    let current = node;
+    while (current && current !== document.body) {
+      const style = window.getComputedStyle(current);
+      if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`) && current.scrollHeight > current.clientHeight) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    return document.scrollingElement || document.documentElement;
   }
 
   function extractBodyAnswerFallback(options, runState) {

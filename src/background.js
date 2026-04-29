@@ -299,6 +299,7 @@ function normalizeReadOptions(provider, options) {
     runId: options.runId,
     run: options.run || null,
     useCopyButton: Boolean(options.useCopyButton),
+    hydrateRenderedContent: Boolean(options.hydrateRenderedContent),
     readTimeoutMs: clampNumber(options.readTimeoutMs, 5000, 60000, 15000)
   };
 }

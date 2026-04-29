@@ -47,6 +47,7 @@ Usage:
   openadviser send "your prompt" --provider chatgpt
   openadviser send "your prompt" --provider grok
   openadviser read --run-id <runId>
+  openadviser wait --run-id <runId>
   openadviser extension-path
 
 Commands:
@@ -54,6 +55,7 @@ Commands:
   health          Check bridge health.
   send            Submit a prompt to a web AI provider.
   read            Read an answer snapshot for a runId.
+  wait            Poll read until the run is complete or timeout is reached.
   extension-path  Print the extension directory to load in Chrome.
 `);
 }

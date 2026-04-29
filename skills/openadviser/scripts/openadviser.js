@@ -9,6 +9,7 @@ const DEFAULT_OPENADVISER_BIN = process.env.OPENADVISER_BIN || "openadviser";
 const DEFAULT_BRIDGE_URL = process.env.WEB_AI_BRIDGE_URL || process.env.CHATGPT_BRIDGE_URL || "http://127.0.0.1:8787";
 const DEFAULT_PROVIDER = process.env.ADVISER_PROVIDER || process.env.WEB_AI_PROVIDER || "chatgpt";
 const DEFAULT_TIMEOUT_MS = 120000;
+const DEFAULT_WAIT_TIMEOUT_MS = 600000;
 const DEFAULT_PAGE_LOAD_TIMEOUT_MS = 15000;
 
 main().catch((error) => {
@@ -21,6 +22,11 @@ async function main() {
   const flags = parseArgs(rest);
 
   if (command === "help" || command === "--help" || command === "-h") {
+    printHelp();
+    return;
+  }
+
+  if (rest.includes("--help") || rest.includes("-h")) {
     printHelp();
     return;
   }
@@ -57,6 +63,26 @@ async function main() {
 
     await ensureBridgeRunning(flags);
     const result = readViaOpenAdviser(runId, flags);
+    if (flags.json) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
+    const text = result && result.result && typeof result.result.text === "string"
+      ? result.result.text
+      : JSON.stringify(result, null, 2);
+    console.log(text);
+    return;
+  }
+
+  if (command === "wait") {
+    const runId = String(flags["run-id"] || flags.run || flags.positionals[0] || "").trim();
+    if (!runId) {
+      throw new Error("runId is required. Use `openadviser.js wait --run-id <id>`.");
+    }
+
+    await ensureBridgeRunning(flags);
+    const result = waitViaOpenAdviser(runId, flags);
     if (flags.json) {
       console.log(JSON.stringify(result, null, 2));
       return;
@@ -218,8 +244,49 @@ function readViaOpenAdviser(runId, flags) {
   if (flags["copy-button"]) {
     args.push("--copy-button");
   }
+  if (flags.full || flags["full-text"]) {
+    args.push("--full");
+  }
   if (flags["read-timeout"]) {
     args.push("--read-timeout", String(numberFlag(flags["read-timeout"], 15000)));
+  }
+
+  return runOpenAdviser(args, "", flags);
+}
+
+function waitViaOpenAdviser(runId, flags) {
+  const args = [
+    "wait",
+    "--json",
+    "--timeout",
+    String(numberFlag(flags.timeout, DEFAULT_WAIT_TIMEOUT_MS)),
+    "--run-id",
+    runId
+  ];
+
+  if (flags.server) {
+    args.push("--server", String(flags.server));
+  }
+  if (flags.provider && flags.provider !== true) {
+    args.push("--provider", normalizeProvider(flags.provider));
+  }
+  if (flags["copy-button"]) {
+    args.push("--copy-button");
+  }
+  if (flags.full || flags["full-text"]) {
+    args.push("--full");
+  }
+  if (flags["no-full"]) {
+    args.push("--no-full");
+  }
+  if (flags["read-timeout"]) {
+    args.push("--read-timeout", String(numberFlag(flags["read-timeout"], 15000)));
+  }
+  if (flags.interval) {
+    args.push("--interval", String(numberFlag(flags.interval, 5000)));
+  }
+  if (flags["read-task-timeout"]) {
+    args.push("--read-task-timeout", String(numberFlag(flags["read-task-timeout"], DEFAULT_TIMEOUT_MS)));
   }
 
   return runOpenAdviser(args, "", flags);
@@ -370,6 +437,7 @@ function printHelp() {
   openadviser.js send "question" --context-file context.md
   cat context.md | openadviser.js send "question"
   openadviser.js read --run-id <runId>
+  openadviser.js wait --run-id <runId>
 
 Options:
   --context-file <path>        Compact-style context file to send.
@@ -381,12 +449,17 @@ Options:
   --provider <id>              Web AI provider. Supported now: chatgpt, grok. Default: ${DEFAULT_PROVIDER}
   --url <url>                  Override provider URL for send.
   --timeout <ms>               Atomic bridge action wait timeout. Default: ${DEFAULT_TIMEOUT_MS}
+                               For wait, total timeout. Default: ${DEFAULT_WAIT_TIMEOUT_MS}
+  --interval <ms>              Poll interval for wait. Default: 5000
   --page-load-timeout <ms>     Max soft wait for provider page load before continuing. Default: ${DEFAULT_PAGE_LOAD_TIMEOUT_MS}
   --input-timeout <ms>         Provider composer wait timeout before send.
   --run-id <id>                Adviser run id to read.
+  --full                       Hydrate rendered content and use provider Copy response before DOM fallback.
   --read-timeout <ms>          Page read timeout. Default: 15000
+  --read-task-timeout <ms>     Per-read bridge task timeout for wait. Default: ${DEFAULT_TIMEOUT_MS}
   --copy-button                Try the provider's Copy response button during read.
+  --no-full                    Disable wait's default full-read mode.
   --json                       Print full bridge task object.
-  --text                       For send, print only runId.
+  --text                       For send, print only runId; for read/wait, print answer text.
 `);
 }

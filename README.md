@@ -14,7 +14,7 @@ OpenAdviser gives your local tools a small HTTP bridge and a Chrome extension:
 
 - `send` opens a new background provider tab and submits a prompt.
 - `read` returns the current answer snapshot for that run.
-- If the answer is still `waiting` or `streaming`, your agent can wait and call `read` again.
+- `wait` polls `read` until the answer is complete or a timeout is reached. It uses full-read mode by default.
 
 This atomic design keeps judgement with the caller. The bridge does not guess how long a difficult answer should take.
 
@@ -29,14 +29,14 @@ Supported providers:
 
 OpenAdviser does not use provider APIs. It relies on your running Chrome session.
 
-Before calling `send` or `read`, make sure:
+Before calling `send`, `read`, or `wait`, make sure:
 
 - Chrome is open.
 - The OpenAdviser extension is loaded and enabled.
 - The selected provider tab can reach the network normally.
 - You are logged in to the selected provider, such as ChatGPT or Grok.
 
-If Chrome is not running, `openadviser send` and `openadviser read` fail fast with a message asking the user to open Chrome. If the provider website is offline, blocked, logged out, or stuck behind verification, the agent should stop and ask the human operator to restore Chrome/network/provider access before retrying.
+If Chrome is not running, `openadviser send`, `openadviser read`, and `openadviser wait` fail fast with a message asking the user to open Chrome. If the provider website is offline, blocked, logged out, or stuck behind verification, the agent should stop and ask the human operator to restore Chrome/network/provider access before retrying.
 
 ## Installation
 
@@ -87,14 +87,14 @@ openadviser health
 
 ```bash
 openadviser send "Reply with exactly OK" --provider chatgpt --text
-openadviser read --run-id <runId> --text
+openadviser wait --run-id <runId> --text
 ```
 
 For Grok:
 
 ```bash
 openadviser send "Reply with exactly OK-grok-provider" --provider grok --text
-openadviser read --run-id <runId> --text
+openadviser wait --run-id <runId> --text
 ```
 
 ### Agent Self-Setup
@@ -125,26 +125,29 @@ Start by assuming the user has installed the CLI, installed the `openadviser` sk
 
 Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, and verify provider login.
 
-When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, and reads answer snapshots.
+When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, reads answer snapshots, and waits for completion when requested.
 
 ```bash
 run_id="$(openadviser send "$PROMPT" --provider chatgpt --text)"
 openadviser read --run-id "$run_id" --text
 ```
 
-For longer answers, poll until the returned status is `complete`.
+For longer answers, start `wait` in a background terminal/session and continue non-dependent work while the provider responds.
 
 ```bash
 run_id="$(openadviser send "$PROMPT" --provider grok --text)"
-
-while true; do
-  result="$(openadviser read --run-id "$run_id")"
-  echo "$result"
-  status="$(node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync(0,'utf8')); console.log(j.result.status)" <<< "$result")"
-  [ "$status" = "complete" ] && break
-  sleep 5
-done
+openadviser wait --run-id "$run_id" --provider grok --text > adviser-result.txt &
 ```
+
+Use `read` manually when the agent wants a single snapshot and will decide itself whether to wait longer.
+
+Use `read --full` when a background provider tab has only mounted part of a long answer in the DOM:
+
+```bash
+openadviser read --run-id "$run_id" --full --text
+```
+
+Full-read mode first scrolls the answer area to trigger lazy rendering. If the answer is complete and the provider exposes a Copy response button, the extension clicks that button inside the page and intercepts the copied text before it reaches the system clipboard. This gives the agent the provider's own full response text without requiring manual copy/paste.
 
 Recommended prompt shape for agents:
 
@@ -190,6 +193,7 @@ openadviser health
 openadviser send "your prompt" --provider chatgpt
 openadviser send "your prompt" --provider grok
 openadviser read --run-id <runId>
+openadviser wait --run-id <runId>
 openadviser extension-path
 ```
 
@@ -197,12 +201,16 @@ Useful flags:
 
 - `--provider <chatgpt|grok>`: provider to open. Default `chatgpt`.
 - `--url <url>`: override the provider URL for a send.
-- `--timeout <ms>`: CLI wait timeout for the atomic action.
+- `--timeout <ms>`: CLI timeout. For `wait`, this is the total wait timeout.
+- `--interval <ms>`: poll interval for `wait`.
 - `--page-load-timeout <ms>`: soft page-load wait before injection continues.
 - `--input-timeout <ms>`: provider composer wait timeout.
 - `--read-timeout <ms>`: provider page read timeout.
+- `--read-task-timeout <ms>`: per-read bridge task timeout for `wait`.
+- `--full`: hydrate rendered content and use the provider Copy response button before DOM fallback.
+- `--no-full`: disable `wait`'s default full-read mode.
 - `--copy-button`: try the provider's Copy response button during read.
-- `--text`: for `send`, print only the `runId`; for `read`, print only answer text.
+- `--text`: for `send`, print only the `runId`; for `read` and `wait`, print only answer text.
 - `--quiet`: suppress progress messages.
 
 Environment variables:

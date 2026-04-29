@@ -119,8 +119,14 @@
     );
     const stableMs = clampNumber(options.stableMs, 1000, 15000, 3000);
     const prompt = normalizeText(options.run?.prompt || runState?.prompt || runState?.promptPreview || "");
-    const assistantMessages = getAssistantMessages();
-    const candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    let assistantMessages = getAssistantMessages();
+    let candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    const hydrated = Boolean(options.hydrateRenderedContent && candidate);
+    if (hydrated) {
+      await hydrateRenderedMessage(candidate, options);
+      assistantMessages = getAssistantMessages();
+      candidate = selectAssistantForRun(assistantMessages, beforeAssistantCount);
+    }
     const domText = candidate ? extractMessageText(candidate) : "";
     const fallbackText = extractBodyAnswerFallback(prompt);
     const hasResponseActions = candidate ? Boolean(findCopyButton(candidate)) : false;
@@ -168,7 +174,8 @@
         placeholder,
         latestAssistantPreview: preview(domText),
         fallbackPreview: preview(fallbackText),
-        runStateFound: Boolean(runState)
+        runStateFound: Boolean(runState),
+        hydrated
       }
     };
 
@@ -200,6 +207,65 @@
       return "complete";
     }
     return "streaming";
+  }
+
+  async function hydrateRenderedMessage(node, options = {}) {
+    const container = responseContainer(node) || node;
+    const scrollRoot = findScrollRoot(container);
+    const stepDelayMs = clampNumber(options.hydrateStepDelayMs, 50, 1000, 150);
+    const maxSteps = clampNumber(options.hydrateMaxSteps, 3, 80, 24);
+
+    await scrollElementIntoView(container, "start", stepDelayMs);
+    await scrollThroughElement(container, scrollRoot, stepDelayMs, maxSteps);
+    await scrollElementIntoView(container, "end", stepDelayMs);
+  }
+
+  async function scrollElementIntoView(element, block, delayMs) {
+    try {
+      element.scrollIntoView({ block, inline: "nearest" });
+    } catch (error) {
+      element.scrollIntoView();
+    }
+    await delay(delayMs);
+  }
+
+  async function scrollThroughElement(element, scrollRoot, delayMs, maxSteps) {
+    if (!element || !scrollRoot) {
+      return;
+    }
+
+    const rootRect = scrollRoot === document.scrollingElement
+      ? { top: 0, height: window.innerHeight }
+      : scrollRoot.getBoundingClientRect();
+    const startTop = scrollRoot.scrollTop + element.getBoundingClientRect().top - rootRect.top - 80;
+    const elementHeight = Math.max(element.scrollHeight, element.getBoundingClientRect().height, 1);
+    const viewportHeight = Math.max(rootRect.height || window.innerHeight, 200);
+    const step = Math.max(160, Math.floor(viewportHeight * 0.75));
+    const steps = Math.min(maxSteps, Math.ceil(elementHeight / step) + 1);
+
+    for (let index = 0; index <= steps; index += 1) {
+      scrollRoot.scrollTop = Math.max(0, startTop + index * step);
+      window.dispatchEvent(new Event("scroll"));
+      document.dispatchEvent(new Event("scroll"));
+      await delay(delayMs);
+    }
+  }
+
+  function findScrollRoot(node) {
+    let current = node;
+    while (current && current !== document.body) {
+      const style = window.getComputedStyle(current);
+      if (/(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`) && current.scrollHeight > current.clientHeight) {
+        return current;
+      }
+      current = current.parentElement;
+    }
+
+    const explicit = Array.from(document.querySelectorAll("main div, [class*='overflow-y-auto']")).find((element) => {
+      const style = window.getComputedStyle(element);
+      return /(auto|scroll)/.test(`${style.overflowY} ${style.overflow}`) && element.scrollHeight > element.clientHeight;
+    });
+    return explicit || document.scrollingElement || document.documentElement;
   }
 
   function chooseBestText(domText, fallbackText, prompt) {
