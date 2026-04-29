@@ -25,6 +25,11 @@ Supported providers:
 | `chatgpt` | `https://chatgpt.com/` |
 | `grok` | `https://grok.com/` |
 
+Provider guidance for agents:
+
+- Use `chatgpt` for deep web research, online best-practice discovery, broad source gathering, and using web information to solve engineering/product/design problems.
+- Use `grok` when the task specifically needs current posts from X/Twitter.
+
 ## Runtime Requirements
 
 OpenAdviser does not use provider APIs. It relies on your running Chrome session.
@@ -149,6 +154,17 @@ openadviser wait --run-id "$run_id" --provider grok --text > adviser-result.txt 
 ```
 
 Use `read` manually when the agent wants a single snapshot and will decide itself whether to wait longer.
+
+When the adviser needs to reason about local implementation details, include only the directly relevant code evidence. Web providers cannot read local paths, so paths alone are not enough for code-level decisions. Use explicit excerpts rather than repository dumps:
+
+```bash
+node skills/openadviser/scripts/openadviser.js send "Review this implementation choice" \
+  --context-file adviser-context.md \
+  --include-file src/background.js#L204-L260 \
+  --include-file src/content/chatgpt-page.js#L120-L210
+```
+
+The skill wrapper appends a `Relevant Code Evidence` section for those caller-selected excerpts. Do not include unrelated files, generated output, vendored dependencies, secrets, or large logs.
 
 Use `read --full` when a provider page has only mounted part of a long answer in the DOM:
 

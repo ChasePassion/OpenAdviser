@@ -10,7 +10,9 @@ Use this method before calling the external adviser. The goal is not to summariz
 - Preserve enough context for judgment: constraints, current state, evidence, failed attempts, validation, risks, and next actions.
 - Separate facts from caller interpretation. Label facts, assumptions, hypotheses, preferences, and proposed decisions explicitly.
 - Include primary evidence where it matters: file paths, function names, command outputs, error text, links, dates, version numbers, screenshots, observed DOM facts.
+- Include relevant local code excerpts when the adviser must reason about implementation details. A web AI provider cannot open local paths.
 - Exclude unusable or misleading context: skill catalogs, hidden reasoning, encrypted blobs, raw transcripts, repeated tool logs, and meta chatter.
+- Exclude unrelated code. Code evidence should be curated, not a repository dump.
 - Do not over-steer the adviser. Give the adviser's question and constraints, but do not pre-answer it inside the context.
 
 ## Two-Pass Briefing Method
@@ -18,11 +20,12 @@ Use this method before calling the external adviser. The goal is not to summariz
 1. Inventory the situation with the `compact` contract: goal, constraints, state, decisions, technical context, validation, risks, and next steps.
 2. Rewrite for adviser judgment:
    - Replace meta-goals with the real user outcome.
-   - Add `Adviser decision needed`.
-   - Move evidence into `Fact:` bullets.
-   - Move uncertain interpretation into `Assumption/Hypothesis:` bullets.
-   - Add what would disprove the current approach.
-   - Remove tool-call ceremony and low-signal history.
+- Add `Adviser decision needed`.
+- Move evidence into `Fact:` bullets.
+- Move uncertain interpretation into `Assumption/Hypothesis:` bullets.
+- If code matters, add only the directly relevant file excerpts with path, line range, symbol, and why the excerpt matters.
+- Add what would disprove the current approach.
+- Remove tool-call ceremony and low-signal history.
 
 The brief should feel like a case file for a senior decision, not a test report for the adviser tool.
 
@@ -48,7 +51,9 @@ Provide enough information for a strong model to disagree intelligently:
 - Include the constraints that would make an otherwise-good solution unacceptable.
 - Include the best arguments against your intended approach.
 - Include unknowns and what has not been verified.
+- Include the smallest sufficient code evidence when local implementation details affect the answer.
 - Omit low-signal history that only explains how the conversation got here.
+- Omit code that is not on the direct bug, design, config, test, or data-flow path.
 
 ## Required Shape
 
@@ -84,6 +89,9 @@ Use the compact headings, but write them as a decision brief:
 
 ## Important Files & Code Locations
 - `path`: [role, relevant symbols, why it matters]
+- Relevant code evidence:
+  - `path` lines X-Y: [symbol / behavior / why this excerpt matters]
+  - [Short excerpt if needed]
 
 ## Critical Technical Context
 - Verified facts:
@@ -157,3 +165,32 @@ If the user asks a broad research question, preserve the user's wording but add 
 ```
 
 This prevents the external adviser from answering an abstract encyclopedia question when the actual need is an implementation decision.
+
+## Code Evidence Pattern
+
+When the adviser needs implementation context, paths alone are not enough. Provide a curated code packet:
+
+````markdown
+## Important Files & Code Locations
+- `src/background.js`: Owns provider window activation and read orchestration.
+- `src/content/chatgpt-page.js`: Owns ChatGPT DOM extraction and Copy response capture.
+
+## Relevant Code Evidence
+### `src/background.js` lines 204-236
+- Symbol: `readRunResult`
+- Why it matters: The adviser must judge whether focusing before extraction is sufficient.
+
+```javascript
+async function readRunResult(run, options = {}) {
+  ...
+}
+```
+````
+
+Rules:
+
+- Include only code that the adviser must inspect to answer the question.
+- Prefer line ranges for the exact function, call site, config block, test, fixture, or error path.
+- Include related tests or fixtures when behavior is the question.
+- Do not include generated files, vendored dependencies, lockfiles, secrets, or unrelated modules.
+- If the code is large, summarize surrounding architecture and include the decisive excerpt.

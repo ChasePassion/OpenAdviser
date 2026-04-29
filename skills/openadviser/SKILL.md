@@ -1,6 +1,6 @@
 ---
 name: openadviser
-description: Consult ChatGPT Web, Grok, or another OpenAdviser-supported web AI provider as an external adviser using a manually prepared compact-style decision brief. Use when an AI agent is stuck, faces an engineering/product/design decision, needs a second opinion, needs current web-facing research, should validate an approach before continuing, or needs to search posts on X/Twitter; for X post search use Grok and include "search posts on X" in the prompt. The caller must write the context brief explicitly instead of reading hidden session files.
+description: Consult ChatGPT Web, Grok, or another OpenAdviser-supported web AI provider as an external adviser using a manually prepared compact-style decision brief. Use when an AI agent is stuck, faces an engineering/product/design decision, needs a second opinion, needs current web-facing research, needs deep web research, needs online best-practice discovery, should gather web information to solve a problem, should validate an approach before continuing, or needs to search posts on X/Twitter. Use ChatGPT for deep web research and best-practice research; use Grok for X post search and include "search posts on X" in the prompt. The caller must write the context brief explicitly instead of reading hidden session files.
 ---
 
 # OpenAdviser
@@ -30,11 +30,12 @@ If the bridge is not already running, `scripts/openadviser.js` tries to start it
 3. Put the real user goal and the exact adviser judgment in `Goal`. Never write `Primary task: ask adviser...`, `test adviser...`, or `success criteria: adviser returns an answer` unless the user's actual task is to debug this skill.
 4. Separate verified facts, primary evidence, caller assessment, assumptions/hypotheses, decisions, risks, and unknowns.
 5. Include enough information for the adviser to disagree intelligently: constraints, failed attempts, test results, exact errors, relevant files, source links, dates, version numbers, screenshots, observed page/DOM facts, and unresolved tradeoffs.
-6. Add anti-bias context when useful: the best argument against the caller's preferred approach, what is not verified, and what would change the decision.
-7. Exclude skill catalogs, encrypted reasoning, hidden system text, raw transcript dumps, and low-signal tool chatter.
-8. Ask one focused adviser question with a decision frame.
-9. Send the context brief plus question with `scripts/openadviser.js send`, capture `result.runId`, then run `scripts/openadviser.js wait --run-id <runId>` in a background terminal/session while continuing non-dependent work. Use `read` only when a single manual snapshot is needed.
-10. Treat the answer as advice, not authority; reconcile it against primary evidence and continue locally.
+6. When local code affects the answer, include the directly relevant code evidence, not just paths. Web providers cannot read the caller's filesystem.
+7. Add anti-bias context when useful: the best argument against the caller's preferred approach, what is not verified, and what would change the decision.
+8. Exclude skill catalogs, encrypted reasoning, hidden system text, raw transcript dumps, low-signal tool chatter, secrets, generated/vendor files, and unrelated code.
+9. Ask one focused adviser question with a decision frame.
+10. Send the context brief plus question with `scripts/openadviser.js send`, capture `result.runId`, then run `scripts/openadviser.js wait --run-id <runId>` in a background terminal/session while continuing non-dependent work. Use `read` only when a single manual snapshot is needed.
+11. Treat the answer as advice, not authority; reconcile it against primary evidence and continue locally.
 
 Before first use, or whenever context quality is uncertain, read `references/context-brief-method.md`. For the design rationale and local limitations, read `references/adviser-strategy.md`.
 
@@ -73,6 +74,10 @@ Use the compact sections below, but write them as a decision brief. The section 
 
 ## Important Files & Code Locations
 - `path/to/file`: [Why it matters]
+- Relevant code evidence:
+  - `path/to/file` lines X-Y: [symbol / behavior / why this exact excerpt matters]
+  - Include an excerpt only when the web adviser must reason about local implementation details.
+  - If no local code is needed, write `(none; external research or strategy only)`.
 
 ## Critical Technical Context
 - Verified facts:
@@ -122,6 +127,28 @@ Good context: `Primary task: Decide how to redesign X under constraints Y; Advis
 
 For broad research requests such as `调研 skills`, do not brief the adviser as if the answer itself is the goal. Brief the real local decision: why the research matters, what artifact or implementation it should inform, what is already known, what constraints apply, and what recommendation is needed.
 
+## Code Evidence Rules
+
+When the adviser needs to reason about local code, provide the smallest sufficient code packet:
+
+- Include only files, functions, call sites, config blocks, tests, errors, or DOM snippets directly connected to the question.
+- For each excerpt, include path, line range, relevant symbols, and why it matters.
+- Prefer narrow excerpts around the bug/decision path. Include an entire file only if it is small and most of it is relevant.
+- Include related tests or fixtures when the question depends on behavior, not just implementation.
+- Do not include unrelated code, generated output, dependencies, lockfiles, secrets, credentials, or large raw logs.
+- If code is intentionally omitted, say why the adviser can answer without it.
+
+Use wrapper-managed inclusion when possible:
+
+```bash
+node path/to/skills/openadviser/scripts/openadviser.js send "your focused question" \
+  --context-file ./adviser-context.md \
+  --include-file src/provider.ts#L40-L120 \
+  --include-file tests/provider.test.ts#L1-L90
+```
+
+`--include-file` is explicit and repeatable. It does not discover files automatically; the calling agent must decide which code is relevant. Use `--code-file` as an alias. If a file is large, provide a `#Lstart-Lend` range.
+
 ## Background Terminal Use
 
 OpenAdviser answers can take a long time because they depend on a live browser, network health, provider page load, web search, and model response time. Do not run `send` in the background just to wait for the answer: `send` returns quickly after submitting the prompt. Run `wait` in a background terminal/session whenever the answer is not an immediate blocker.
@@ -140,6 +167,14 @@ Send a manually prepared context file:
 
 ```bash
 node path/to/skills/openadviser/scripts/openadviser.js send "your focused question" --context-file ./adviser-context.md
+```
+
+Send with caller-selected code evidence:
+
+```bash
+node path/to/skills/openadviser/scripts/openadviser.js send "your focused question" \
+  --context-file ./adviser-context.md \
+  --include-file src/background.js#L204-L260
 ```
 
 Pipe context through stdin:
@@ -186,6 +221,22 @@ Use plain `read` when a quick DOM snapshot is enough and the caller will decide 
 
 The built-in adviser prompt tells the web AI provider: "Before answering, first analyze your task, examine the problem structure from multiple angles, then search the web for relevant information to support your judgment."
 
+## Deep Web Research Use Case
+
+When the task needs deep network research, online best-practice discovery, or web information gathering to solve a concrete problem, use ChatGPT:
+
+```bash
+cat ./adviser-context.md | node path/to/skills/openadviser/scripts/openadviser.js send "请进行深度网络调研，查找相关最佳实践，并基于事实、推断和建议回答这个决策问题。" --provider chatgpt
+```
+
+Rules for this use case:
+
+- Prefer `--provider chatgpt` unless the requested evidence is specifically X/Twitter posts.
+- Brief the real problem, decision, constraints, and what the caller already knows. Do not send only `调研 X`.
+- Ask ChatGPT to distinguish public facts, source-backed claims, inference, and recommendations.
+- Use this path for current ecosystem research, implementation best practices, architecture comparisons, library/tooling choice, security guidance, operational practices, and market/product research that benefits from broad web sources.
+- After receiving the answer, verify important claims against primary sources before acting.
+
 ## X Post Search Use Case
 
 When the task needs current posts from X/Twitter, use Grok:
@@ -204,6 +255,8 @@ Rules for this use case:
 
 - `--context-file <path>`: Compact-style context file.
 - `--context <text>`: Inline compact-style context.
+- `--include-file <path[#Lx-Ly]>`: Caller-selected relevant code evidence. Repeatable. Use only for code directly related to the adviser question.
+- `--code-file <path[#Lx-Ly]>`: Alias for `--include-file`.
 - `--question-file <path>`: Adviser question file.
 - `--provider <chatgpt|grok>`: Web AI provider. Default `chatgpt`.
 - `--url <url>`: Override provider URL for the send action.

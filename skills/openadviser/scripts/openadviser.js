@@ -11,6 +11,9 @@ const DEFAULT_PROVIDER = process.env.ADVISER_PROVIDER || process.env.WEB_AI_PROV
 const DEFAULT_TIMEOUT_MS = 120000;
 const DEFAULT_WAIT_TIMEOUT_MS = 600000;
 const DEFAULT_PAGE_LOAD_TIMEOUT_MS = 15000;
+const MULTI_VALUE_FLAGS = new Set(["include-file", "code-file", "include-code"]);
+const MAX_INCLUDED_FILE_CHARS = 50000;
+const MAX_INCLUDED_CODE_CHARS = 140000;
 
 main().catch((error) => {
   console.error(error && error.stack ? error.stack : String(error));
@@ -41,8 +44,9 @@ async function main() {
       throw new Error("Context is empty. Provide compact-style context on stdin or with --context-file.");
     }
 
-    validateContextBrief(context, Boolean(flags["strict-context"]));
-    const prompt = buildAdviserPrompt(question, context);
+    const enrichedContext = appendIncludedCodeEvidence(context, flags);
+    validateContextBrief(enrichedContext, Boolean(flags["strict-context"]));
+    const prompt = buildAdviserPrompt(question, enrichedContext);
     await ensureBridgeRunning(flags);
     const result = sendViaOpenAdviser(prompt, flags);
 
@@ -103,6 +107,7 @@ function buildAdviserPrompt(question, context) {
     "You are an external adviser for an AI agent.",
     "You are receiving a manually prepared decision brief based on a compact-style handoff, not a raw transcript or hidden state dump.",
     "Interpret the brief like a senior reviewer would: verified facts are evidence, caller assessments are hypotheses, risks/open questions are unresolved, and file paths/commands/errors are primary context.",
+    "You cannot read the caller's local filesystem. If local code matters, rely only on code excerpts included in the brief; if the needed code is missing, say exactly what code evidence is missing.",
     "Do not blindly accept the caller's opinions. If the facts support a different conclusion, say so and explain the tie-breaker.",
     "If the brief is missing decision-critical context or appears to describe the adviser call rather than the underlying situation, call that out before answering.",
     "Before answering, first analyze your task, examine the problem structure from multiple angles, then search the web for relevant information to support your judgment.",
@@ -173,11 +178,10 @@ async function ensureBridgeRunning(flags) {
   }
 
   const bin = String(flags["openadviser-bin"] || DEFAULT_OPENADVISER_BIN);
-  const child = spawn(bin, ["server"], {
+  const child = spawnCommand(bin, ["server"], {
     detached: true,
     stdio: "ignore",
-    windowsHide: true,
-    shell: process.platform === "win32"
+    windowsHide: true
   });
   child.unref();
 
@@ -294,12 +298,11 @@ function waitViaOpenAdviser(runId, flags) {
 
 function runOpenAdviser(args, input, flags) {
   const bin = String(flags["openadviser-bin"] || DEFAULT_OPENADVISER_BIN);
-  const result = spawnSync(bin, args, {
+  const result = spawnSyncCommand(bin, args, {
     input,
     encoding: "utf8",
     maxBuffer: 200 * 1024 * 1024,
-    windowsHide: true,
-    shell: process.platform === "win32"
+    windowsHide: true
   });
 
   if (result.status !== 0) {
@@ -352,6 +355,38 @@ function summarizeTask(task) {
   }, null, 2);
 }
 
+function spawnCommand(command, args, options) {
+  if (process.platform !== "win32") {
+    return spawn(command, args, options);
+  }
+
+  return spawn(windowsShell(), ["/d", "/s", "/c", windowsCommandLine(command, args)], options);
+}
+
+function spawnSyncCommand(command, args, options) {
+  if (process.platform !== "win32") {
+    return spawnSync(command, args, options);
+  }
+
+  return spawnSync(windowsShell(), ["/d", "/s", "/c", windowsCommandLine(command, args)], options);
+}
+
+function windowsShell() {
+  return process.env.ComSpec || "cmd.exe";
+}
+
+function windowsCommandLine(command, args) {
+  return [command, ...args].map(quoteWindowsArg).join(" ");
+}
+
+function quoteWindowsArg(value) {
+  const text = String(value);
+  if (text.length > 0 && !/[ \t&()^|<>"]/.test(text)) {
+    return text;
+  }
+  return `"${text.replace(/"/g, "\"\"")}"`;
+}
+
 async function readQuestion(flags) {
   if (flags["question-file"]) {
     return fs.readFileSync(path.resolve(String(flags["question-file"])), "utf8");
@@ -380,6 +415,148 @@ async function readContext(flags) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+function appendIncludedCodeEvidence(context, flags) {
+  const specs = [
+    ...flagValues(flags, "include-file"),
+    ...flagValues(flags, "code-file"),
+    ...flagValues(flags, "include-code")
+  ];
+  if (specs.length === 0) {
+    return context;
+  }
+
+  const blocks = specs.map((spec) => readCodeEvidenceSpec(spec));
+  const totalChars = blocks.reduce((sum, block) => sum + block.content.length, 0);
+  if (totalChars > MAX_INCLUDED_CODE_CHARS) {
+    throw new Error(`Included code is too large (${totalChars} chars). Include fewer files or narrower #Lstart-Lend ranges. Max: ${MAX_INCLUDED_CODE_CHARS}.`);
+  }
+
+  return [
+    context.trim(),
+    "## Relevant Code Evidence",
+    "Only the following caller-selected code excerpts are provided. They should be treated as local primary evidence; no other local files are available to the web adviser.",
+    "",
+    ...blocks.map(formatCodeEvidenceBlock)
+  ].join("\n");
+}
+
+function readCodeEvidenceSpec(rawSpec) {
+  const spec = String(rawSpec || "").trim();
+  if (!spec) {
+    throw new Error("--include-file requires a path, optionally with #Lstart-Lend.");
+  }
+
+  const parsed = parseCodeEvidenceSpec(spec);
+  const resolvedPath = path.resolve(parsed.filePath);
+  const stat = fs.statSync(resolvedPath);
+  if (!stat.isFile()) {
+    throw new Error(`Included code path is not a file: ${parsed.filePath}`);
+  }
+
+  const text = fs.readFileSync(resolvedPath, "utf8");
+  if (text.includes("\0")) {
+    throw new Error(`Included code appears to be binary: ${parsed.filePath}`);
+  }
+
+  const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const startLine = parsed.startLine || 1;
+  const endLine = parsed.endLine || lines.length;
+  if (startLine < 1 || endLine < startLine || startLine > lines.length) {
+    throw new Error(`Invalid include range for ${parsed.filePath}: #L${startLine}-L${endLine}. File has ${lines.length} lines.`);
+  }
+  const selectedLines = lines.slice(startLine - 1, Math.min(endLine, lines.length));
+  const content = selectedLines.join("\n");
+  if (!parsed.hasExplicitRange && content.length > MAX_INCLUDED_FILE_CHARS) {
+    throw new Error(`Included file is too large without a line range: ${parsed.filePath} (${content.length} chars). Use ${parsed.filePath}#Lstart-Lend. Max per whole file: ${MAX_INCLUDED_FILE_CHARS}.`);
+  }
+
+  return {
+    displayPath: normalizeDisplayPath(resolvedPath),
+    startLine,
+    endLine: Math.min(endLine, lines.length),
+    language: languageForPath(resolvedPath),
+    content
+  };
+}
+
+function parseCodeEvidenceSpec(spec) {
+  const match = spec.match(/^(.*)#L(\d+)(?:-L?(\d+))?$/i);
+  if (!match) {
+    return {
+      filePath: spec,
+      startLine: null,
+      endLine: null,
+      hasExplicitRange: false
+    };
+  }
+
+  const startLine = Number(match[2]);
+  const endLine = Number(match[3] || match[2]);
+  return {
+    filePath: match[1],
+    startLine,
+    endLine,
+    hasExplicitRange: true
+  };
+}
+
+function formatCodeEvidenceBlock(block) {
+  return [
+    `### \`${block.displayPath}\``,
+    `- Lines: ${block.startLine}-${block.endLine}`,
+    "- Relevance: caller-selected because this code is directly related to the adviser question.",
+    "",
+    `\`\`\`${block.language}`,
+    block.content,
+    "```",
+    ""
+  ].join("\n");
+}
+
+function normalizeDisplayPath(resolvedPath) {
+  const relative = path.relative(process.cwd(), resolvedPath);
+  const display = relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+    ? relative
+    : resolvedPath;
+  return display.replace(/\\/g, "/");
+}
+
+function languageForPath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const languages = {
+    ".js": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".jsx": "jsx",
+    ".json": "json",
+    ".md": "markdown",
+    ".py": "python",
+    ".ps1": "powershell",
+    ".sh": "bash",
+    ".html": "html",
+    ".css": "css",
+    ".yaml": "yaml",
+    ".yml": "yaml"
+  };
+  return languages[ext] || "";
+}
+
+function flagValues(flags, name) {
+  const value = flags[name];
+  if (value === undefined) {
+    return [];
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => item === true || item === undefined || item === null ? "" : String(item));
+  }
+  if (value === true) {
+    return [""];
+  }
+  return [String(value)];
+}
+
 function parseArgs(args) {
   const flags = { positionals: [] };
   for (let index = 0; index < args.length; index += 1) {
@@ -391,20 +568,32 @@ function parseArgs(args) {
 
     const eqIndex = arg.indexOf("=");
     if (eqIndex >= 0) {
-      flags[arg.slice(2, eqIndex)] = arg.slice(eqIndex + 1);
+      setParsedFlag(flags, arg.slice(2, eqIndex), arg.slice(eqIndex + 1));
       continue;
     }
 
     const name = arg.slice(2);
     const next = args[index + 1];
     if (next && !next.startsWith("--")) {
-      flags[name] = next;
+      setParsedFlag(flags, name, next);
       index += 1;
     } else {
-      flags[name] = true;
+      setParsedFlag(flags, name, true);
     }
   }
   return flags;
+}
+
+function setParsedFlag(flags, name, value) {
+  if (!MULTI_VALUE_FLAGS.has(name)) {
+    flags[name] = value;
+    return;
+  }
+
+  if (!Array.isArray(flags[name])) {
+    flags[name] = [];
+  }
+  flags[name].push(value);
 }
 
 function numberFlag(value, fallback) {
@@ -442,6 +631,8 @@ function printHelp() {
 Options:
   --context-file <path>        Compact-style context file to send.
   --context <text>             Compact-style context text to send.
+  --include-file <path[#Lx-Ly]> Include caller-selected relevant code evidence. Repeatable.
+  --code-file <path[#Lx-Ly]>   Alias for --include-file.
   --question-file <path>       Adviser question file.
   --strict-context             Fail if the context brief lacks core compact/adviser signals.
   --openadviser-bin <command>  OpenAdviser executable. Default: ${DEFAULT_OPENADVISER_BIN}
