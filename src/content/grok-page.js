@@ -11,6 +11,10 @@
   const PAGE_SOURCE = "web-ai-bridge-page";
 
   const INPUT_SELECTORS = [
+    "[data-testid='chat-input'] .ProseMirror[contenteditable='true']",
+    "[data-testid='chat-input'] [contenteditable='true']",
+    ".query-bar .ProseMirror[contenteditable='true']",
+    ".tiptap.ProseMirror[contenteditable='true']",
     "form textarea",
     "form [contenteditable='true'][role='textbox']",
     "form [contenteditable='true']",
@@ -261,6 +265,15 @@
     if (node.closest("form")) {
       score += 60;
     }
+    if (node.closest("[data-testid='chat-input']")) {
+      score += 220;
+    }
+    if (node.matches(".ProseMirror, .tiptap") || node.classList.contains("ProseMirror") || node.classList.contains("tiptap")) {
+      score += 160;
+    }
+    if (node.closest(".query-bar")) {
+      score += 120;
+    }
     if (node.closest("main")) {
       score += 20;
     }
@@ -293,7 +306,7 @@
     if (input instanceof HTMLTextAreaElement) {
       setNativeTextareaValue(input, text);
     } else {
-      setContentEditableValue(input, text);
+      await setContentEditableValue(input, text);
     }
 
     await delay(300);
@@ -315,44 +328,150 @@
     fireInputEvents(textarea, text, "insertText");
   }
 
-  function setContentEditableValue(editor, text) {
-    editor.focus();
-    selectEditorContents(editor);
-
-    let inserted = dispatchPaste(editor, text);
-    if (inserted && normalizeText(getEditorText(editor)).includes(text.slice(0, Math.min(40, text.length)))) {
+  async function setContentEditableValue(editor, text) {
+    if (await tryPasteInsert(editor, text)) {
+      return;
+    }
+    if (await tryBeforeInputInsert(editor, text)) {
+      return;
+    }
+    if (await tryExecCommandInsert(editor, text)) {
       return;
     }
 
-    selectEditorContents(editor);
-    inserted = false;
-    try {
-      inserted = document.execCommand("insertText", false, text);
-    } catch (error) {
-      inserted = false;
-    }
-
-    if (!inserted || !normalizeText(getEditorText(editor)).includes(text.slice(0, Math.min(40, text.length)))) {
-      editor.replaceChildren(...textToParagraphNodes(text));
-    }
-
+    await activateEditor(editor);
+    setContentEditableDomValue(editor, text);
     fireInputEvents(editor, text, "insertText");
+    if (await waitForEditorText(editor, text, 1000)) {
+      return;
+    }
+
+    throw new Error(`Prompt text was not accepted by the Grok Tiptap editor. Composer text: "${preview(getEditorText(editor))}"`);
   }
 
-  function dispatchPaste(editor, text) {
+  async function activateEditor(editor) {
+    editor.scrollIntoView({ block: "center", inline: "nearest" });
+    dispatchPointerClick(editor);
+    editor.focus({ preventScroll: true });
+    selectEditorContents(editor);
+    await delay(100);
+  }
+
+  async function tryPasteInsert(editor, text) {
+    await activateEditor(editor);
     try {
       const clipboardData = new DataTransfer();
       clipboardData.setData("text/plain", text);
-      const pasteEvent = new ClipboardEvent("paste", {
+      clipboardData.setData("text/html", textToHtml(text));
+      editor.dispatchEvent(createClipboardEvent("paste", clipboardData));
+      await delay(250);
+      if (await waitForEditorText(editor, text, 750)) {
+        fireInputEvents(editor, text, "insertFromPaste", clipboardData);
+        return true;
+      }
+    } catch (error) {
+      // Continue to the next insertion strategy.
+    }
+    return false;
+  }
+
+  async function tryBeforeInputInsert(editor, text) {
+    await activateEditor(editor);
+    try {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", text);
+      clipboardData.setData("text/html", textToHtml(text));
+      const beforeInput = createInputEvent("beforeinput", {
         bubbles: true,
         cancelable: true,
-        clipboardData
+        composed: true,
+        inputType: "insertFromPaste",
+        data: text,
+        dataTransfer: clipboardData
       });
-      editor.dispatchEvent(pasteEvent);
-      fireInputEvents(editor, text, "insertFromPaste");
-      return true;
+      const defaultNotPrevented = editor.dispatchEvent(beforeInput);
+      await delay(100);
+
+      if (await waitForEditorText(editor, text, 500)) {
+        return true;
+      }
+
+      if (defaultNotPrevented) {
+        setContentEditableDomValue(editor, text);
+        fireInputEvents(editor, text, "insertFromPaste", clipboardData);
+      }
+
+      return await waitForEditorText(editor, text, 750);
     } catch (error) {
       return false;
+    }
+  }
+
+  async function tryExecCommandInsert(editor, text) {
+    await activateEditor(editor);
+    try {
+      const inserted = document.execCommand("insertText", false, text);
+      await delay(250);
+      if (inserted && await waitForEditorText(editor, text, 750)) {
+        return true;
+      }
+    } catch (error) {
+      // Continue to fallback.
+    }
+    return false;
+  }
+
+  function createClipboardEvent(type, clipboardData) {
+    let event;
+    try {
+      event = new ClipboardEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        clipboardData
+      });
+    } catch (error) {
+      event = new Event(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      });
+    }
+
+    if (!event.clipboardData) {
+      try {
+        Object.defineProperty(event, "clipboardData", {
+          configurable: true,
+          enumerable: true,
+          value: clipboardData
+        });
+      } catch (error) {
+        // Best effort; some browsers expose clipboardData as read-only.
+      }
+    }
+    return event;
+  }
+
+  function createInputEvent(type, init) {
+    try {
+      return new InputEvent(type, init);
+    } catch (error) {
+      const event = new Event(type, init);
+      for (const [key, value] of Object.entries(init)) {
+        if (key === "bubbles" || key === "cancelable" || key === "composed") {
+          continue;
+        }
+        try {
+          Object.defineProperty(event, key, {
+            configurable: true,
+            enumerable: true,
+            value
+          });
+        } catch (defineError) {
+          // Best effort.
+        }
+      }
+      return event;
     }
   }
 
@@ -364,19 +483,32 @@
     selection.addRange(range);
   }
 
-  function fireInputEvents(target, text, inputType) {
-    target.dispatchEvent(new InputEvent("beforeinput", {
+  function fireInputEvents(target, text, inputType, dataTransfer) {
+    target.dispatchEvent(createInputEvent("beforeinput", {
       bubbles: true,
       cancelable: true,
+      composed: true,
       inputType,
-      data: text
+      data: text,
+      dataTransfer
     }));
-    target.dispatchEvent(new InputEvent("input", {
+    target.dispatchEvent(createInputEvent("input", {
       bubbles: true,
+      cancelable: false,
+      composed: true,
       inputType,
-      data: text
+      data: text,
+      dataTransfer
     }));
     target.dispatchEvent(new Event("change", { bubbles: true }));
+    document.dispatchEvent(new Event("selectionchange", { bubbles: true }));
+  }
+
+  function setContentEditableDomValue(editor, text) {
+    editor.replaceChildren(...textToParagraphNodes(text));
+    editor.querySelectorAll(".is-empty, .is-editor-empty").forEach((node) => {
+      node.classList.remove("is-empty", "is-editor-empty");
+    });
   }
 
   function textToParagraphNodes(text) {
@@ -385,6 +517,37 @@
       paragraph.textContent = line || "\u00a0";
       return paragraph;
     });
+  }
+
+  function textToHtml(text) {
+    return text.split("\n")
+      .map((line) => `<p>${escapeHtml(line) || "<br>"}</p>`)
+      .join("");
+  }
+
+  function escapeHtml(value) {
+    return String(value || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function waitForEditorText(editor, text, timeoutMs) {
+    const normalized = normalizeText(text);
+    const needle = normalized.slice(0, Math.min(40, normalized.length));
+    if (!needle) {
+      return true;
+    }
+
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (normalizeText(getEditorText(editor)).includes(needle)) {
+        return true;
+      }
+      await delay(100);
+    }
+    return false;
   }
 
   async function waitForSendButtonReady(input, timeoutMs) {
