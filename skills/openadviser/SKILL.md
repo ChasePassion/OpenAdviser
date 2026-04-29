@@ -1,6 +1,6 @@
 ---
 name: openadviser
-description: Consult ChatGPT Web, Grok, or another OpenAdviser-supported web AI provider as an external adviser using a manually prepared compact-style decision brief. Use when an AI agent is stuck, faces an engineering/product/design decision, needs a second opinion, needs current web-facing research, or should validate an approach before continuing; the caller must write the context brief explicitly instead of reading hidden session files.
+description: Consult ChatGPT Web, Grok, or another OpenAdviser-supported web AI provider as an external adviser using a manually prepared compact-style decision brief. Use when an AI agent is stuck, faces an engineering/product/design decision, needs a second opinion, needs current web-facing research, should validate an approach before continuing, or needs to search posts on X/Twitter; for X post search use Grok and include "search posts on X" in the prompt. The caller must write the context brief explicitly instead of reading hidden session files.
 ---
 
 # OpenAdviser
@@ -152,6 +152,20 @@ node path/to/skills/openadviser/scripts/openadviser.js read --run-id <runId> --j
 Call `read` repeatedly after waiting if `result.status` is `waiting` or `streaming`. The caller decides whether the current answer is complete enough. The script does not use the clipboard unless `--copy-button` is explicitly passed.
 
 The built-in adviser prompt tells the web AI provider: "Before answering, first analyze your task, examine the problem structure from multiple angles, then search the web for relevant information to support your judgment."
+
+## X Post Search Use Case
+
+When the task needs current posts from X/Twitter, use Grok:
+
+```bash
+cat ./adviser-context.md | node path/to/skills/openadviser/scripts/openadviser.js send "search posts on X" --provider grok
+```
+
+Rules for this use case:
+
+- Always pass `--provider grok`.
+- The adviser question sent to Grok must include the exact phrase `search posts on X`; keep any topic, scope, and desired output structure in the context brief.
+- Do not use ChatGPT for this use case unless Grok is unavailable and the user accepts the fallback.
 
 ## Useful Options
 
