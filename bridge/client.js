@@ -1,7 +1,13 @@
 "use strict";
 
+const { execFileSync } = require("node:child_process");
+
 const DEFAULT_BASE_URL = process.env.WEB_AI_BRIDGE_URL || process.env.CHATGPT_BRIDGE_URL || "http://127.0.0.1:8787";
 const DEFAULT_PROVIDER = process.env.WEB_AI_PROVIDER || "chatgpt";
+const CHROME_NOT_RUNNING_MESSAGE = [
+  "Chrome is not running.",
+  "Open Chrome, make sure the OpenAdviser extension is loaded and enabled, then retry."
+].join(" ");
 
 main().catch((error) => {
   console.error(error && error.message ? error.message : error);
@@ -42,6 +48,7 @@ async function send(args) {
   if (!prompt.trim()) {
     throw new Error("Prompt is empty. Pass text after `send` or pipe it through stdin.");
   }
+  assertChromeRunning(flags);
 
   const baseUrl = flags.server || DEFAULT_BASE_URL;
   const timeoutMs = numberFlag(flags.timeout, 120000);
@@ -98,6 +105,7 @@ async function read(args) {
   if (!runId) {
     throw new Error("runId is required. Use `read --run-id <id>`.");
   }
+  assertChromeRunning(flags);
 
   const baseUrl = flags.server || DEFAULT_BASE_URL;
   const timeoutMs = numberFlag(flags.timeout, 120000);
@@ -251,6 +259,104 @@ function normalizeProvider(value) {
   return provider || DEFAULT_PROVIDER;
 }
 
+function assertChromeRunning(flags) {
+  if (shouldSkipChromeProcessCheck(flags)) {
+    return;
+  }
+
+  const status = chromeProcessStatus();
+  if (status.running === false) {
+    throw new Error(`${CHROME_NOT_RUNNING_MESSAGE} Checked process names: ${status.names.join(", ")}.`);
+  }
+  if (status.running === null && !flags.quiet) {
+    console.error(`[client] unable to verify Chrome process state (${status.reason}); continuing anyway.`);
+  }
+}
+
+function shouldSkipChromeProcessCheck(flags) {
+  return Boolean(
+    flags["no-chrome-check"] ||
+    /^(1|true|yes)$/i.test(String(process.env.OPENADVISER_SKIP_CHROME_CHECK || ""))
+  );
+}
+
+function chromeProcessStatus() {
+  const names = chromeProcessNames();
+  try {
+    if (process.platform === "win32") {
+      return {
+        running: names.some((name) => windowsProcessExists(name)),
+        names
+      };
+    }
+
+    if (process.platform === "darwin" || process.platform === "linux") {
+      return {
+        running: names.some((name) => unixProcessExists(name)),
+        names
+      };
+    }
+
+    return {
+      running: null,
+      names,
+      reason: `unsupported platform ${process.platform}`
+    };
+  } catch (error) {
+    return {
+      running: null,
+      names,
+      reason: error && error.message ? error.message : String(error)
+    };
+  }
+}
+
+function chromeProcessNames() {
+  const configured = String(process.env.OPENADVISER_CHROME_PROCESS_NAMES || "")
+    .split(",")
+    .map((name) => name.trim())
+    .filter(Boolean);
+  if (configured.length > 0) {
+    return configured;
+  }
+
+  if (process.platform === "win32") {
+    return ["chrome.exe"];
+  }
+  if (process.platform === "darwin") {
+    return ["Google Chrome", "Google Chrome Canary", "Chromium"];
+  }
+  return ["chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser"];
+}
+
+function windowsProcessExists(processName) {
+  const output = execFileSync("tasklist.exe", ["/FI", `IMAGENAME eq ${processName}`, "/NH"], {
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  return new RegExp(`\\b${escapeRegExp(processName)}\\b`, "i").test(output);
+}
+
+function unixProcessExists(processName) {
+  try {
+    const output = execFileSync("pgrep", ["-x", processName], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"]
+    });
+    return output.trim().length > 0;
+  } catch (error) {
+    if (typeof error.status === "number" && error.status === 1) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function printHelp() {
   console.log(`Usage:
   node bridge/client.js health
@@ -267,6 +373,7 @@ Options:
   --input-timeout <ms>        Provider composer wait timeout inside the extension.
   --run-id <id>               Run id to read.
   --copy-button               On read, also try the provider's Copy response button.
+  --no-chrome-check           Skip the local Chrome process preflight check.
   --text                      Print only runId for send, or answer text for read.
   --json                      Accepted for compatibility; JSON is the default output.
   --quiet                     Suppress progress messages.

@@ -25,6 +25,19 @@ Supported providers:
 | `chatgpt` | `https://chatgpt.com/` |
 | `grok` | `https://grok.com/` |
 
+## Runtime Requirements
+
+OpenAdviser does not use provider APIs. It relies on your running Chrome session.
+
+Before calling `send` or `read`, make sure:
+
+- Chrome is open.
+- The OpenAdviser extension is loaded and enabled.
+- The selected provider tab can reach the network normally.
+- You are logged in to the selected provider, such as ChatGPT or Grok.
+
+If Chrome is not running, `openadviser send` and `openadviser read` fail fast with a message asking the user to open Chrome. If the provider website is offline, blocked, logged out, or stuck behind verification, the agent should stop and ask the human operator to restore Chrome/network/provider access before retrying.
+
 ## Installation
 
 ### Human Operator Setup
@@ -109,6 +122,8 @@ If provider login or extension loading is not already complete, ask the human op
 ## Agent Usage
 
 Start by assuming the user has installed the CLI, installed the `openadviser` skill globally, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
+
+Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, and verify provider login.
 
 When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, and reads answer snapshots.
 
