@@ -22,6 +22,7 @@
     "bin/",
     "bridge/",
     "scripts/",
+    "skills/",
     "src/",
     "manifest.json",
     "README.md",
@@ -38,7 +39,7 @@
     "browser-automation"
   ],
   "scripts": {
-    "check": "node --check src/background.js && node --check src/content/provider.js && node --check src/content/chatgpt-page.js && node --check src/content/grok-page.js && node --check bridge/server.js && node --check bridge/client.js",
+    "check": "node --check src/background.js && node --check src/content/provider.js && node --check src/content/chatgpt-page.js && node --check src/content/grok-page.js && node --check bridge/server.js && node --check bridge/client.js && node --check skills/openadviser/scripts/openadviser.js",
     "package:extension": "node scripts/package-extension.js",
     "prepack": "npm run check && npm run package:extension",
     "server": "node bridge/server.js",

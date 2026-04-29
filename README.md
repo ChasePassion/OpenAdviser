@@ -37,13 +37,21 @@ Use this path if you want to install OpenAdviser on your machine and let agents 
 npm install -g openadviser
 ```
 
-2. Start the local bridge server.
+2. Install the OpenAdviser skill globally with the skills CLI.
+
+```bash
+npx skills add ChasePassion/OpenAdviser --skill openadviser --agent '*' --global --yes
+```
+
+This follows the OpenCLI-style skills workflow: the skill lives in `skills/openadviser/` in this repo, and the installer creates a global symlink unless you choose a copy-based install.
+
+3. Start the local bridge server.
 
 ```bash
 openadviser server
 ```
 
-3. Load the Chrome extension.
+4. Load the Chrome extension.
 
 ```bash
 openadviser extension-path
@@ -51,18 +59,18 @@ openadviser extension-path
 
 Open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select the directory printed by `openadviser extension-path`.
 
-4. Make sure you are logged in to the web providers you want to use.
+5. Make sure you are logged in to the web providers you want to use.
 
 - ChatGPT: `https://chatgpt.com/`
 - Grok: `https://grok.com/`
 
-5. Check the bridge.
+6. Check the bridge.
 
 ```bash
 openadviser health
 ```
 
-6. Run a manual smoke test.
+7. Run a manual smoke test.
 
 ```bash
 openadviser send "Reply with exactly OK" --provider chatgpt --text
@@ -80,7 +88,9 @@ openadviser read --run-id <runId> --text
 
 Use this path if you are an AI agent, coding assistant, or local automation tool.
 
-Start by assuming the user has installed the CLI, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
+Start by assuming the user has installed the CLI, installed the `openadviser` skill globally, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
+
+When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, and reads answer snapshots.
 
 ```bash
 run_id="$(openadviser send "$PROMPT" --provider chatgpt --text)"
@@ -117,6 +127,26 @@ Question:
 ```
 
 Keep context factual. Separate known facts, assumptions, your current judgement, and the decision you want the web adviser to help with.
+
+## Skill Layout
+
+```text
+skills/openadviser/
+├── SKILL.md
+├── agents/openai.yaml
+├── references/
+│   ├── adviser-strategy.md
+│   └── context-brief-method.md
+└── scripts/openadviser.js
+```
+
+The skill name is `openadviser`.
+
+Install it globally:
+
+```bash
+npx skills add ChasePassion/OpenAdviser --skill openadviser --agent '*' --global --yes
+```
 
 ## CLI
 
