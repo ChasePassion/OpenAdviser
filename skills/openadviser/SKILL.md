@@ -32,7 +32,7 @@ If the bridge is not already running, `scripts/openadviser.js` tries to start it
 6. Add anti-bias context when useful: the best argument against the caller's preferred approach, what is not verified, and what would change the decision.
 7. Exclude skill catalogs, encrypted reasoning, hidden system text, raw transcript dumps, and low-signal tool chatter.
 8. Ask one focused adviser question with a decision frame.
-9. Send the context brief plus question with `scripts/openadviser.js send`, wait as needed, then read snapshots with `scripts/openadviser.js read`.
+9. Run the OpenAdviser command in a background terminal/session, send the context brief plus question with `scripts/openadviser.js send`, continue non-dependent work while the web provider responds, then read snapshots with `scripts/openadviser.js read`.
 10. Treat the answer as advice, not authority; reconcile it against primary evidence and continue locally.
 
 Before first use, or whenever context quality is uncertain, read `references/context-brief-method.md`. For the design rationale and local limitations, read `references/adviser-strategy.md`.
@@ -120,6 +120,18 @@ Bad context: `Primary task: Ask adviser to research X`. This describes the tool 
 Good context: `Primary task: Decide how to redesign X under constraints Y; Adviser decision needed: whether approach A or B is safer`. This describes the situation.
 
 For broad research requests such as `调研 skills`, do not brief the adviser as if the answer itself is the goal. Brief the real local decision: why the research matters, what artifact or implementation it should inform, what is already known, what constraints apply, and what recommendation is needed.
+
+## Background Terminal Use
+
+OpenAdviser calls can take a long time because they depend on a live browser, network health, provider page load, web search, and model response time. Run the command on a background terminal/session whenever the answer is not an immediate blocker.
+
+Recommended agent flow:
+
+1. Start `send` in a background terminal/session.
+2. Capture the returned `result.runId`.
+3. Continue local work that does not depend on the adviser answer.
+4. Later poll `read --run-id <runId> --json`; if the status is `waiting` or `streaming`, wait and poll again.
+5. Integrate the adviser result only after checking it against the local evidence and constraints.
 
 ## Commands
 
