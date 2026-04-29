@@ -25,11 +25,11 @@ Supported providers:
 | `chatgpt` | `https://chatgpt.com/` |
 | `grok` | `https://grok.com/` |
 
-## Choose Your Path
+## Installation
 
-### For Humans
+### Human Operator Setup
 
-Use this path if you want to install OpenAdviser on your machine and let agents call it.
+Use this path when a human is preparing a machine for agents. The human installs the runtime, loads the browser extension, and logs in to provider websites; the agent is still the intended user of OpenAdviser.
 
 1. Install the CLI.
 
@@ -70,7 +70,7 @@ Open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**,
 openadviser health
 ```
 
-7. Run a manual smoke test.
+7. Run a smoke test for the agent runtime.
 
 ```bash
 openadviser send "Reply with exactly OK" --provider chatgpt --text
@@ -84,9 +84,29 @@ openadviser send "Reply with exactly OK-grok-provider" --provider grok --text
 openadviser read --run-id <runId> --text
 ```
 
-### For Agents
+### Agent Self-Setup
 
-Use this path if you are an AI agent, coding assistant, or local automation tool.
+Use this path when an AI agent is allowed to install its own local dependencies.
+
+```bash
+npm install -g openadviser
+npx skills add ChasePassion/OpenAdviser --global --all
+openadviser health
+```
+
+If `openadviser health` fails, start the bridge:
+
+```bash
+openadviser server
+```
+
+If provider login or extension loading is not already complete, ask the human operator to:
+
+1. Run `openadviser extension-path`
+2. Load that directory in `chrome://extensions/`
+3. Log in to `https://chatgpt.com/` and/or `https://grok.com/`
+
+## Agent Usage
 
 Start by assuming the user has installed the CLI, installed the `openadviser` skill globally, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
 
@@ -230,36 +250,6 @@ Then load the generated zip contents through:
 ```text
 chrome://extensions/ -> Developer mode -> Load unpacked
 ```
-
-## Release Maintainers
-
-Publish checks:
-
-```bash
-npm run check
-npm run package:extension
-npm pack --dry-run
-```
-
-Publish npm manually:
-
-```bash
-npm publish --access public
-```
-
-Create a GitHub release:
-
-```bash
-git tag vX.Y.Z
-git push origin vX.Y.Z
-```
-
-The release workflow uploads:
-
-- `dist/openadviser-extension-<version>.zip`
-- `openadviser-<version>.tgz`
-
-If the repository has an `NPM_TOKEN` secret, the same workflow also publishes the npm package.
 
 ## Security Notes
 
