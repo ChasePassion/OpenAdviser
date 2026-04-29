@@ -109,8 +109,8 @@ chrome://extensions/ -> Developer mode -> Load unpacked
 This repository also includes a release workflow. Push a version tag to publish release assets:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.2.1
+git push origin v0.2.1
 ```
 
 The workflow uploads:

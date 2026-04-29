@@ -1,6 +1,6 @@
 {
   "name": "openadviser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Open-source adviser bridge that lets local AI agents consult ChatGPT, Grok, and other web AI providers through a Chrome extension.",
   "license": "MIT",
   "repository": {
@@ -11,6 +11,10 @@
     "url": "https://github.com/ChasePassion/OpenAdviser/issues"
   },
   "homepage": "https://github.com/ChasePassion/OpenAdviser#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
   "bin": {
     "openadviser": "bin/openadviser.js"
   },
