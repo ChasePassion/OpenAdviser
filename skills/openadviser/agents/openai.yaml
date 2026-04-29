@@ -1,3 +1,0 @@
-display_name: OpenAdviser
-short_description: Consult ChatGPT or Grok with a decision brief
-default_prompt: Write a compact-style decision brief with facts, assumptions, evidence, and the exact judgment needed, then use OpenAdviser to consult the selected web AI provider.
