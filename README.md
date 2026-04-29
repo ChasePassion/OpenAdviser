@@ -1,173 +1,122 @@
 # OpenAdviser
 
-OpenAdviser is an open-source bridge that lets local AI agents consult web AI providers such as ChatGPT and Grok without CDP and without taking over the foreground browser tab.
+OpenAdviser lets local AI agents ask web AI products like ChatGPT and Grok through your logged-in browser session.
 
-This is a single repository project. The same `OpenAdviser` repo contains the npm CLI/server, Chrome extension source, extension packaging script, and release workflow.
+It is built for agents that need a second opinion, current web-facing research, or a strategy review without using provider APIs, CDP, or a foreground browser takeover.
 
-It has two parts:
+[![npm](https://img.shields.io/npm/v/openadviser?style=flat-square)](https://www.npmjs.com/package/openadviser)
+[![release](https://img.shields.io/github/v/release/ChasePassion/OpenAdviser?style=flat-square)](https://github.com/ChasePassion/OpenAdviser/releases)
+[![license](https://img.shields.io/github/license/ChasePassion/OpenAdviser?style=flat-square)](LICENSE)
 
-- A local Node.js bridge server and CLI, published as the `openadviser` npm package.
-- A Chrome MV3 extension that opens provider tabs in the background, sends prompts, and reads answer snapshots.
+## What It Does
 
-Current providers:
+OpenAdviser gives your local tools a small HTTP bridge and a Chrome extension:
 
-- `chatgpt` -> `https://chatgpt.com/`
-- `grok` -> `https://grok.com/`
+- `send` opens a new background provider tab and submits a prompt.
+- `read` returns the current answer snapshot for that run.
+- If the answer is still `waiting` or `streaming`, your agent can wait and call `read` again.
 
-## Why
+This atomic design keeps judgement with the caller. The bridge does not guess how long a difficult answer should take.
 
-OpenAdviser is designed for coding agents and local automation tools that need a second opinion, strategy review, or current web-facing research from a web AI product the user is already logged into.
+Supported providers:
 
-The bridge deliberately keeps the workflow atomic:
+| Provider | URL |
+| --- | --- |
+| `chatgpt` | `https://chatgpt.com/` |
+| `grok` | `https://grok.com/` |
 
-1. `send` opens a new background provider tab, submits the prompt, and returns a `runId`.
-2. `read` reads the current answer snapshot for that `runId`.
-3. If the answer is still `waiting` or `streaming`, wait and call `read` again.
+## Choose Your Path
 
-## Install From npm
+### For Humans
+
+Use this path if you want to install OpenAdviser on your machine and let agents call it.
+
+1. Install the CLI.
 
 ```bash
 npm install -g openadviser
 ```
 
-Start the local bridge:
+2. Start the local bridge server.
 
 ```bash
 openadviser server
 ```
 
-Check health:
-
-```bash
-openadviser health
-```
-
-Submit prompts:
-
-```bash
-openadviser send "Reply with exactly OK" --provider chatgpt
-openadviser send "Reply with exactly OK" --provider grok
-```
-
-Read a result:
-
-```bash
-openadviser read --run-id <runId>
-openadviser read --run-id <runId> --text
-```
-
-Find the installed extension directory:
+3. Load the Chrome extension.
 
 ```bash
 openadviser extension-path
 ```
 
-Load that directory in `chrome://extensions/` with **Developer mode -> Load unpacked**.
+Open `chrome://extensions/`, enable **Developer mode**, click **Load unpacked**, and select the directory printed by `openadviser extension-path`.
 
-## Install From Source
+4. Make sure you are logged in to the web providers you want to use.
 
-```bash
-git clone https://github.com/ChasePassion/OpenAdviser.git
-cd OpenAdviser
-npm install
-npm run check
-npm run package:extension
-```
+- ChatGPT: `https://chatgpt.com/`
+- Grok: `https://grok.com/`
 
-The extension zip is written to:
-
-```text
-dist/openadviser-extension-<version>.zip
-```
-
-For local development, load the repository root directly in `chrome://extensions/`:
-
-```text
-OpenAdviser/
-```
-
-## Chrome Extension Distribution
-
-There are two practical distribution channels:
-
-### GitHub Release
-
-Run:
+5. Check the bridge.
 
 ```bash
-npm run package:extension
-```
-
-Upload `dist/openadviser-extension-<version>.zip` to a GitHub Release.
-
-Users can download the zip, unzip it, and load the extracted folder through:
-
-```text
-chrome://extensions/ -> Developer mode -> Load unpacked
-```
-
-This repository also includes a release workflow. Push a version tag to publish release assets:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-The workflow uploads:
-
-- `dist/openadviser-extension-<version>.zip`
-- `openadviser-<version>.tgz`
-
-If the repository has an `NPM_TOKEN` secret, the same workflow also publishes the npm package.
-
-### Chrome Web Store
-
-Run:
-
-```bash
-npm run package:extension
-```
-
-Upload `dist/openadviser-extension-<version>.zip` in the Chrome Web Store Developer Dashboard.
-
-Before submitting, prepare:
-
-- Extension name: `OpenAdviser`
-- Short description: `Let local AI agents consult ChatGPT, Grok, and other web AI providers from background tabs.`
-- Detailed description: reuse the project summary from this README.
-- Privacy disclosure: the extension talks only to `127.0.0.1:8787` / `localhost:8787` and supported provider sites. It does not ship a remote backend.
-- Screenshots and icon assets if you want a polished public listing.
-
-## Publish to npm
-
-The npm package name is lowercase:
-
-```text
-openadviser
-```
-
-Product name and extension name are:
-
-```text
-OpenAdviser
-```
-
-Publish flow:
-
-```bash
-npm login
-npm run check
-npm run package:extension
-npm pack --dry-run
-npm publish --access public
-```
-
-After publishing:
-
-```bash
-npm install -g openadviser
 openadviser health
 ```
+
+6. Run a manual smoke test.
+
+```bash
+openadviser send "Reply with exactly OK" --provider chatgpt --text
+openadviser read --run-id <runId> --text
+```
+
+For Grok:
+
+```bash
+openadviser send "Reply with exactly OK-grok-provider" --provider grok --text
+openadviser read --run-id <runId> --text
+```
+
+### For Agents
+
+Use this path if you are an AI agent, coding assistant, or local automation tool.
+
+Start by assuming the user has installed the CLI, started the bridge, loaded the extension, and logged in to the selected provider. Then call OpenAdviser as an external adviser.
+
+```bash
+run_id="$(openadviser send "$PROMPT" --provider chatgpt --text)"
+openadviser read --run-id "$run_id" --text
+```
+
+For longer answers, poll until the returned status is `complete`.
+
+```bash
+run_id="$(openadviser send "$PROMPT" --provider grok --text)"
+
+while true; do
+  result="$(openadviser read --run-id "$run_id")"
+  echo "$result"
+  status="$(node -e "const fs=require('fs'); const j=JSON.parse(fs.readFileSync(0,'utf8')); console.log(j.result.status)" <<< "$result")"
+  [ "$status" = "complete" ] && break
+  sleep 5
+done
+```
+
+Recommended prompt shape for agents:
+
+```text
+You are an external adviser.
+
+First analyze the task from several angles and inspect the structure of the problem.
+Then use web research where useful to support your judgement.
+
+Context:
+<compact, factual context from the calling agent>
+
+Question:
+<specific decision, research request, or review request>
+```
+
+Keep context factual. Separate known facts, assumptions, your current judgement, and the decision you want the web adviser to help with.
 
 ## CLI
 
@@ -188,8 +137,32 @@ Useful flags:
 - `--page-load-timeout <ms>`: soft page-load wait before injection continues.
 - `--input-timeout <ms>`: provider composer wait timeout.
 - `--read-timeout <ms>`: provider page read timeout.
-- `--copy-button`: try the provider's copy button during read.
+- `--copy-button`: try the provider's Copy response button during read.
 - `--text`: for `send`, print only the `runId`; for `read`, print only answer text.
+- `--quiet`: suppress progress messages.
+
+Environment variables:
+
+- `WEB_AI_BRIDGE_URL`: bridge URL. Default `http://127.0.0.1:8787`.
+- `WEB_AI_PROVIDER`: default provider. Default `chatgpt`.
+
+## Install From Source
+
+```bash
+git clone https://github.com/ChasePassion/OpenAdviser.git
+cd OpenAdviser
+npm install
+npm run check
+npm run package:extension
+```
+
+The extension zip is written to:
+
+```text
+dist/openadviser-extension-<version>.zip
+```
+
+For local development, load the repository root directly in `chrome://extensions/`.
 
 ## Architecture
 
@@ -213,7 +186,25 @@ Boundary rules:
 - Adding a provider should only require a provider registry entry, manifest host permission, and a page automation script.
 - The local bridge listens on `127.0.0.1` by default. Do not expose it to a LAN or the public internet.
 
-## Development
+## Extension Distribution
+
+Download the latest extension zip from the [GitHub Releases page](https://github.com/ChasePassion/OpenAdviser/releases).
+
+To build it yourself:
+
+```bash
+npm run package:extension
+```
+
+Then load the generated zip contents through:
+
+```text
+chrome://extensions/ -> Developer mode -> Load unpacked
+```
+
+## Release Maintainers
+
+Publish checks:
 
 ```bash
 npm run check
@@ -221,7 +212,25 @@ npm run package:extension
 npm pack --dry-run
 ```
 
-When extension source changes, reload it in `chrome://extensions/`.
+Publish npm manually:
+
+```bash
+npm publish --access public
+```
+
+Create a GitHub release:
+
+```bash
+git tag vX.Y.Z
+git push origin vX.Y.Z
+```
+
+The release workflow uploads:
+
+- `dist/openadviser-extension-<version>.zip`
+- `openadviser-<version>.tgz`
+
+If the repository has an `NPM_TOKEN` secret, the same workflow also publishes the npm package.
 
 ## Security Notes
 
