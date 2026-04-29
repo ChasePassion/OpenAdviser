@@ -19,7 +19,7 @@ The human user must have:
 2. Started the bridge: `openadviser server`
 3. Loaded the Chrome extension from `openadviser extension-path`
 4. Logged in to the selected provider in Chrome
-5. Kept the OpenAdviser worker window visible, not minimized or fully covered
+5. Kept Chrome and network healthy; `read`/`wait` will re-activate the OpenAdviser worker window before extraction
 
 If the bridge is not already running, `scripts/openadviser.js` tries to start it automatically.
 
@@ -158,6 +158,10 @@ The `send` command starts the local bridge if needed, submits the prompt to the 
 
 `send` opens a new provider tab in the OpenAdviser worker window. This is intentional: ChatGPT and Grok can stall or render partial answers when their tab is hidden, even when Chrome Memory Saver is disabled. The worker tab must remain active and visible in its own window. If a run stays `waiting` or `streaming` for about 3 minutes with no progress, check whether the worker window is minimized, fully covered, offline, logged out, or blocked by provider verification.
 
+The worker window is positioned automatically: a small popup at the bottom-right of the primary screen's available work area, leaving a margin above the Windows taskbar or equivalent system shelf. Do not pass manual window geometry; the tool owns this placement.
+
+`read` always re-activates the run's worker window before extracting text. `wait` does this on every polling cycle because it repeatedly calls `read`. Treat this as the default pin substitute: while a long answer is generating, keep `wait` running so the small worker window periodically returns to the foreground and gives ChatGPT/Grok an active visible tab to continue rendering in.
+
 Read the current answer snapshot later:
 
 ```bash
@@ -210,9 +214,6 @@ Rules for this use case:
 - `--interval <ms>`: Poll interval for `wait`. Default `5000`.
 - `--page-load-timeout <ms>`: Soft provider page-load wait before continuing to inject/send. Default `15000`.
 - `--input-timeout <ms>`: Provider composer wait timeout before send.
-- `--window-left <px>` / `--window-top <px>`: Worker window position for newly created provider windows.
-- `--window-width <px>` / `--window-height <px>`: Worker window size.
-- `--focus-window`: Focus the worker window when creating it. Default is not to focus it.
 - `--run-id <id>`: Run id returned by `send`; required for `read`.
 - `--full`: Hydrate rendered content and use provider Copy response before DOM fallback.
 - `--read-timeout <ms>`: Page read timeout. Default `15000`.

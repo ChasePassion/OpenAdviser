@@ -19,11 +19,11 @@ const BRIDGE_ALARM_NAME = "web-ai-bridge";
 const DEFAULT_INPUT_TIMEOUT_MS = 60000;
 const DEFAULT_PAGE_LOAD_WAIT_MS = 15000;
 const CONTENT_SCRIPT_READY_TIMEOUT_MS = 20000;
+const DEFAULT_READ_FOCUS_SETTLE_MS = 1200;
 const DEFAULT_WORKER_WINDOW = {
-  left: 24,
-  top: 24,
-  width: 560,
-  height: 520
+  width: 300,
+  height: 220,
+  margin: 12
 };
 
 let bridgeDrainPromise = null;
@@ -223,6 +223,9 @@ async function readRunResult(run, options = {}) {
   await setBadge("READ", "#7c3aed");
   try {
     const activeTab = await ensureRunTabActive(tabId);
+    if (readOptions.focusSettleMs > 0) {
+      await delay(readOptions.focusSettleMs);
+    }
     await ensureContentScriptReady(tabId, CONTENT_SCRIPT_READY_TIMEOUT_MS);
     const response = await readProviderResult(tabId, readOptions);
     if (!response || response.ok !== true) {
@@ -253,7 +256,10 @@ async function readRunResult(run, options = {}) {
       startedAt,
       completedAt,
       elapsedMs: Date.now() - Date.parse(startedAt),
-      meta: response.meta || {}
+      meta: {
+        ...(response.meta || {}),
+        focusSettleMs: readOptions.focusSettleMs
+      }
     };
 
     await saveStatus({
@@ -304,13 +310,7 @@ function normalizeRunOptions(provider, options) {
     source: options.source || "bridge",
     pageUrl,
     windowMode: "visible-worker",
-    focusWorkerWindow: Boolean(options.focusWorkerWindow),
-    workerWindow: {
-      left: clampNumber(options.workerWindowLeft, -10000, 10000, DEFAULT_WORKER_WINDOW.left),
-      top: clampNumber(options.workerWindowTop, -10000, 10000, DEFAULT_WORKER_WINDOW.top),
-      width: clampNumber(options.workerWindowWidth, 320, 2400, DEFAULT_WORKER_WINDOW.width),
-      height: clampNumber(options.workerWindowHeight, 240, 1800, DEFAULT_WORKER_WINDOW.height)
-    },
+    workerWindow: { ...DEFAULT_WORKER_WINDOW },
     pageLoadTimeoutMs: clampNumber(options.pageLoadTimeoutMs, 3000, 120000, DEFAULT_PAGE_LOAD_WAIT_MS),
     inputTimeoutMs: clampNumber(options.inputTimeoutMs, 10000, 180000, DEFAULT_INPUT_TIMEOUT_MS)
   };
@@ -325,59 +325,50 @@ function normalizeReadOptions(provider, options) {
     run: options.run || null,
     useCopyButton: Boolean(options.useCopyButton),
     hydrateRenderedContent: Boolean(options.hydrateRenderedContent),
+    focusSettleMs: clampNumber(options.focusSettleMs, 0, 10000, DEFAULT_READ_FOCUS_SETTLE_MS),
     readTimeoutMs: clampNumber(options.readTimeoutMs, 5000, 60000, 15000)
   };
 }
 
 async function openProviderTab(options) {
-  const worker = await ensureProviderWorkerWindow(options);
-  if (worker.tab) {
-    await rememberProviderWorkerWindow(options.provider, worker.tab.windowId || worker.window.id);
-    return {
-      ...worker.tab,
-      openadviserWindowMode: options.windowMode
-    };
-  }
-
-  const tab = await chrome.tabs.create({
-    windowId: worker.window.id,
+  const bounds = await resolveWorkerWindowBounds(options);
+  const workerWindow = await chrome.windows.create({
     url: options.pageUrl,
-    active: true
+    type: "popup",
+    focused: true,
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height
   });
-  await rememberProviderWorkerWindow(options.provider, tab.windowId || worker.window.id);
+  const tab = Array.isArray(workerWindow.tabs) ? workerWindow.tabs[0] || null : null;
+  if (!tab || !Number.isFinite(Number(tab.id))) {
+    throw new Error("Chrome did not create a provider tab in the OpenAdviser worker window.");
+  }
   return {
     ...tab,
     openadviserWindowMode: options.windowMode
   };
 }
 
-async function ensureProviderWorkerWindow(options) {
-  const existingWindowId = await getProviderWorkerWindowId(options.provider);
-  const existingWindow = await getUsableWorkerWindow(existingWindowId);
-  if (existingWindow) {
-    if (existingWindow.state === "minimized") {
-      await chrome.windows.update(existingWindow.id, { state: "normal" });
-    }
-    return {
-      window: existingWindow,
-      tab: null
-    };
+async function prepareWorkerWindow(windowId, bounds) {
+  const windowInfo = await getWindowSafe(windowId);
+  if (!windowInfo) {
+    return;
   }
 
-  const created = await chrome.windows.create({
-    url: options.pageUrl,
-    type: "popup",
-    focused: options.focusWorkerWindow === true,
-    left: options.workerWindow.left,
-    top: options.workerWindow.top,
-    width: options.workerWindow.width,
-    height: options.workerWindow.height
+  if (windowInfo.state !== "normal") {
+    await chrome.windows.update(windowId, { state: "normal" });
+    await delay(150);
+  }
+
+  await chrome.windows.update(windowId, {
+    left: bounds.left,
+    top: bounds.top,
+    width: bounds.width,
+    height: bounds.height,
+    focused: true
   });
-  await rememberProviderWorkerWindow(options.provider, created.id);
-  return {
-    window: created,
-    tab: Array.isArray(created.tabs) ? created.tabs[0] || null : null
-  };
 }
 
 async function ensureRunTabActive(tabId) {
@@ -389,6 +380,12 @@ async function ensureRunTabActive(tabId) {
     if (windowInfo && windowInfo.state === "minimized") {
       const restored = await chrome.windows.update(tab.windowId, { state: "normal" });
       windowState = restored?.state || "normal";
+    }
+    if (windowInfo && windowInfo.type === "popup") {
+      const bounds = await resolveWorkerWindowBounds({});
+      await prepareWorkerWindow(tab.windowId, bounds);
+    } else {
+      await chrome.windows.update(tab.windowId, { focused: true });
     }
   }
 
@@ -406,40 +403,78 @@ async function ensureRunTabActive(tabId) {
   };
 }
 
-async function getProviderWorkerWindowId(providerId) {
-  const stored = await chrome.storage.local.get(["providerWindows"]);
-  const providerWindows = stored.providerWindows || {};
-  const record = providerWindows[providerId];
-  const windowId = Number(record && record.windowId);
-  return Number.isFinite(windowId) ? windowId : null;
-}
+async function resolveWorkerWindowBounds(options) {
+  const width = DEFAULT_WORKER_WINDOW.width;
+  const height = DEFAULT_WORKER_WINDOW.height;
+  const margin = DEFAULT_WORKER_WINDOW.margin;
+  const workArea = await getPrimaryWorkArea();
 
-async function rememberProviderWorkerWindow(providerId, windowId) {
-  if (!Number.isFinite(Number(windowId))) {
-    return;
-  }
-  const stored = await chrome.storage.local.get(["providerWindows"]);
-  const providerWindows = stored.providerWindows || {};
-  providerWindows[providerId] = {
-    windowId: Number(windowId),
-    type: "openadviser-worker-window",
-    updatedAt: new Date().toISOString()
+  return {
+    left: Math.round(workArea.left + Math.max(0, workArea.width - width - margin)),
+    top: Math.round(workArea.top + Math.max(0, workArea.height - height - margin)),
+    width,
+    height
   };
-  await chrome.storage.local.set({ providerWindows });
 }
 
-async function getUsableWorkerWindow(windowId) {
-  if (!Number.isFinite(Number(windowId))) {
+async function getPrimaryWorkArea() {
+  const displayWorkArea = await getDisplayWorkArea();
+  if (displayWorkArea) {
+    return displayWorkArea;
+  }
+
+  const browserArea = await getBrowserWindowAreaFallback();
+  if (browserArea) {
+    return browserArea;
+  }
+
+  return {
+    left: 0,
+    top: 0,
+    width: 1280,
+    height: 720
+  };
+}
+
+async function getDisplayWorkArea() {
+  try {
+    if (!chrome.system || !chrome.system.display || !chrome.system.display.getInfo) {
+      return null;
+    }
+    const displays = await chrome.system.display.getInfo();
+    const display = displays.find((item) => item.isPrimary) || displays[0];
+    const area = display && (display.workArea || display.bounds);
+    if (!area) {
+      return null;
+    }
+    return normalizeArea(area);
+  } catch (error) {
     return null;
   }
-  const windowInfo = await getWindowSafe(Number(windowId));
-  if (!windowInfo) {
+}
+
+async function getBrowserWindowAreaFallback() {
+  try {
+    const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
+    const candidates = windows
+      .map((windowInfo) => normalizeArea(windowInfo))
+      .filter(Boolean)
+      .sort((left, right) => (right.width * right.height) - (left.width * left.height));
+    return candidates[0] || null;
+  } catch (error) {
     return null;
   }
-  if (windowInfo.type !== "popup") {
+}
+
+function normalizeArea(area) {
+  const left = Number(area.left);
+  const top = Number(area.top);
+  const width = Number(area.width);
+  const height = Number(area.height);
+  if (![left, top, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
     return null;
   }
-  return windowInfo;
+  return { left, top, width, height };
 }
 
 async function getWindowSafe(windowId) {

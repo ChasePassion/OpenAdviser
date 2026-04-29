@@ -41,6 +41,10 @@ If Chrome is not running, `openadviser send`, `openadviser read`, and `openadvis
 
 OpenAdviser intentionally uses a visible worker window instead of an ordinary background tab. Long ChatGPT/Grok answers may not start, continue, or fully render in a hidden tab even when Chrome Memory Saver is disabled. The worker tab is active in its own window so the provider page stays on the normal visible-page rendering path while the user keeps working in another window.
 
+By default, the worker window is a small `300x220` popup placed at the bottom-right of the primary screen's available work area, leaving a margin above the Windows taskbar or equivalent system shelf.
+
+`read` always re-activates the run's worker window before extracting text. `wait` does the same on every polling cycle because it is implemented as repeated reads. This is the default substitute for pinning: if the user clicks another window while the provider is still generating, `wait` periodically brings the small worker window back to the foreground so ChatGPT/Grok can continue rendering. This may briefly steal focus, but it avoids relying on hidden-tab rendering.
+
 ## Installation
 
 ### Human Operator Setup
@@ -128,6 +132,8 @@ Start by assuming the user has installed the CLI, installed the `openadviser` sk
 
 Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, keep the OpenAdviser worker window visible, and verify provider login.
 
+While waiting for long answers, prefer `openadviser wait` over ad hoc sleeps. `wait` periodically re-focuses the worker window before reading, which gives ChatGPT/Grok a visible active tab to continue rendering in.
+
 When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, reads answer snapshots, and waits for completion when requested.
 
 ```bash
@@ -208,9 +214,6 @@ Useful flags:
 - `--interval <ms>`: poll interval for `wait`.
 - `--page-load-timeout <ms>`: soft page-load wait before injection continues.
 - `--input-timeout <ms>`: provider composer wait timeout.
-- `--window-left <px>`, `--window-top <px>`: OpenAdviser worker window position for new provider windows.
-- `--window-width <px>`, `--window-height <px>`: OpenAdviser worker window size. Default `560x520`.
-- `--focus-window`: focus the worker window when it is created. Default is not to focus it.
 - `--read-timeout <ms>`: provider page read timeout.
 - `--read-task-timeout <ms>`: per-read bridge task timeout for `wait`.
 - `--full`: hydrate rendered content and use the provider Copy response button before DOM fallback.
