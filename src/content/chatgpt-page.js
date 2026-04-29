@@ -87,8 +87,7 @@
     const input = await waitForPromptInput(inputTimeoutMs);
 
     await setPromptText(input, cleanPrompt);
-    const button = await waitForSendButtonReady(input, 30000);
-    clickSendButton(button);
+    await submitPrompt(input, cleanPrompt);
 
     await waitForPromptSubmitted(input, cleanPrompt, beforeUserMessages, 20000);
 
@@ -537,6 +536,58 @@
     }
   }
 
+  async function submitPrompt(input, prompt) {
+    const button = await waitForOptionalSendButtonReady(input, 5000);
+    if (button) {
+      clickSendButton(button);
+      return;
+    }
+
+    dispatchEnterSubmit(input);
+    await delay(500);
+    if (normalizeText(getEditorText(input)).length === 0 || isGenerating()) {
+      return;
+    }
+
+    const form = input.closest("form");
+    if (form && typeof form.requestSubmit === "function") {
+      try {
+        form.requestSubmit();
+      } catch (error) {
+        dispatchSubmitEvent(form);
+      }
+    } else if (form) {
+      dispatchSubmitEvent(form);
+    }
+
+    await delay(500);
+    if (normalizeText(getEditorText(input)).length === 0 || isGenerating()) {
+      return;
+    }
+
+    const lateButton = await waitForOptionalSendButtonReady(input, 2000);
+    if (lateButton) {
+      clickSendButton(lateButton);
+      return;
+    }
+
+    throw new Error(`Could not submit ChatGPT prompt after text input. Composer still contains: "${preview(getEditorText(input))}"`);
+  }
+
+  async function waitForOptionalSendButtonReady(input, timeoutMs) {
+    try {
+      return await waitFor(() => {
+        const button = findSendButton(input);
+        if (button && !isDisabled(button)) {
+          return button;
+        }
+        return null;
+      }, timeoutMs, 200);
+    } catch (error) {
+      return null;
+    }
+  }
+
   function clickSendButton(button) {
     if (!button || isDisabled(button)) {
       throw new Error("Refusing to click missing or disabled ChatGPT send button.");
@@ -546,6 +597,59 @@
     button.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, view: window }));
     button.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, view: window }));
     button.click();
+  }
+
+  function dispatchEnterSubmit(input) {
+    input.focus();
+    const events = [
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      }),
+      new KeyboardEvent("keypress", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      }),
+      new KeyboardEvent("keyup", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
+        bubbles: true,
+        cancelable: true,
+        composed: true
+      })
+    ];
+
+    for (const event of events) {
+      input.dispatchEvent(event);
+    }
+  }
+
+  function dispatchSubmitEvent(form) {
+    const submitter = findSendButton(form);
+    const init = {
+      bubbles: true,
+      cancelable: true
+    };
+    if (submitter) {
+      init.submitter = submitter;
+    }
+
+    const event = typeof SubmitEvent === "function"
+      ? new SubmitEvent("submit", init)
+      : new Event("submit", init);
+    form.dispatchEvent(event);
   }
 
   async function waitForPromptSubmitted(input, prompt, beforeUserMessages, timeoutMs) {
