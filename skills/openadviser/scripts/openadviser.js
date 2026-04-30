@@ -292,6 +292,9 @@ function waitViaOpenAdviser(runId, flags) {
   if (flags["read-task-timeout"]) {
     args.push("--read-task-timeout", String(numberFlag(flags["read-task-timeout"], DEFAULT_TIMEOUT_MS)));
   }
+  if (flags["initial-delay"]) {
+    args.push("--initial-delay", String(numberFlag(flags["initial-delay"], 60000)));
+  }
 
   return runOpenAdviser(args, "", flags);
 }

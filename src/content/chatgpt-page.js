@@ -248,13 +248,13 @@
 
   async function hydrateRenderedMessage(node, options = {}) {
     const turn = assistantTurnContainer(node) || node;
-    const scrollRoot = findScrollRoot(turn);
-    const stepDelayMs = clampNumber(options.hydrateStepDelayMs, 50, 1000, 150);
-    const maxSteps = clampNumber(options.hydrateMaxSteps, 3, 80, 24);
 
-    await scrollElementIntoView(turn, "start", stepDelayMs);
-    await scrollThroughElement(turn, scrollRoot, stepDelayMs, maxSteps);
-    await scrollElementIntoView(turn, "end", stepDelayMs);
+    try {
+      turn.scrollIntoView({ block: "end", inline: "nearest" });
+    } catch (error) {
+      turn.scrollIntoView();
+    }
+    await delay(300);
   }
 
   async function scrollElementIntoView(element, block, delayMs) {

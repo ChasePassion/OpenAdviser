@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+### Changed
+
+- **Flash notification instead of foreground stealing**: Replaced all OS-level foreground-stealing logic (PowerShell AttachThreadInput, minimize-restore tricks) with Chrome's `drawAttention` API. The worker window now flashes the taskbar to notify the user instead of aggressively stealing focus. This is less disruptive when the user is actively using the computer.
+- Removed `--no-focus` CLI flag and `OPENADVISER_SKIP_FOCUS` environment variable (no longer needed).
+
 ## 1.1.0
 
 ### Improved

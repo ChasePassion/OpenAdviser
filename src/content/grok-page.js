@@ -215,13 +215,13 @@
 
   async function hydrateRenderedMessage(node, options = {}) {
     const container = responseContainer(node) || node;
-    const scrollRoot = findScrollRoot(container);
-    const stepDelayMs = clampNumber(options.hydrateStepDelayMs, 50, 1000, 150);
-    const maxSteps = clampNumber(options.hydrateMaxSteps, 3, 80, 24);
 
-    await scrollElementIntoView(container, "start", stepDelayMs);
-    await scrollThroughElement(container, scrollRoot, stepDelayMs, maxSteps);
-    await scrollElementIntoView(container, "end", stepDelayMs);
+    try {
+      container.scrollIntoView({ block: "end", inline: "nearest" });
+    } catch (error) {
+      container.scrollIntoView();
+    }
+    await delay(300);
   }
 
   async function scrollElementIntoView(element, block, delayMs) {

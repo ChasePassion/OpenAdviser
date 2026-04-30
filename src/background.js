@@ -367,7 +367,8 @@ async function prepareWorkerWindow(windowId, bounds) {
     top: bounds.top,
     width: bounds.width,
     height: bounds.height,
-    focused: true
+    focused: true,
+    drawAttention: true
   });
 }
 
@@ -378,20 +379,17 @@ async function ensureRunTabActive(tabId) {
     const windowInfo = await getWindowSafe(tab.windowId);
     windowState = windowInfo?.state || null;
 
-    // Minimize-restore cycle forces Windows to bring the window to foreground.
-    // A direct focused: true call is blocked by the OS when another app holds
-    // the foreground, but restoring a minimized window is treated as a
-    // user-initiated action and is always allowed.
-    if (windowInfo) {
-      await chrome.windows.update(tab.windowId, { state: "minimized" });
-      await delay(150);
+    // Ensure the window is not minimized; popup windows are repositioned.
+    if (windowInfo && windowInfo.state === "minimized") {
+      await chrome.windows.update(tab.windowId, { state: "normal" });
+      await delay(100);
     }
 
     if (windowInfo && windowInfo.type === "popup") {
       const bounds = await resolveWorkerWindowBounds({});
       await prepareWorkerWindow(tab.windowId, bounds);
     } else {
-      await chrome.windows.update(tab.windowId, { state: "normal", focused: true });
+      await chrome.windows.update(tab.windowId, { focused: true, drawAttention: true });
     }
   }
 

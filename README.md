@@ -48,7 +48,7 @@ OpenAdviser intentionally uses a visible worker window instead of an ordinary ba
 
 By default, the worker window is a small `300x220` popup placed at the bottom-right of the primary screen's available work area, leaving a margin above the Windows taskbar or equivalent system shelf.
 
-`read` always re-activates the run's worker window before extracting text. `wait` does the same on every polling cycle because it is implemented as repeated reads. This is the default substitute for pinning: if the user clicks another window while the provider is still generating, `wait` periodically brings the small worker window back to the foreground so ChatGPT/Grok can continue rendering. This may briefly steal focus, but it avoids relying on hidden-tab rendering.
+`read` always re-activates the run's worker window before extracting text. `wait` does the same on every polling cycle because it is implemented as repeated reads. When the worker window is not in the foreground, the extension uses `drawAttention` to flash the taskbar, signaling the user to switch to Chrome so the provider can continue rendering. This avoids aggressively stealing focus from the user's current application.
 
 ## Installation
 
@@ -137,7 +137,7 @@ Start by assuming the user has installed the CLI, installed the `openadviser` sk
 
 Do not treat bridge health as proof that provider automation is ready. `openadviser health` only checks the local bridge. If `send` or `read` reports that Chrome is not running, or provider access appears unhealthy, ask the human operator to open Chrome, keep the network healthy, enable the extension, keep the OpenAdviser worker window visible, and verify provider login.
 
-While waiting for long answers, prefer `openadviser wait` over ad hoc sleeps. `wait` periodically re-focuses the worker window before reading, which gives ChatGPT/Grok a visible active tab to continue rendering in.
+While waiting for long answers, prefer `openadviser wait` over ad hoc sleeps. `wait` periodically re-activates the worker window and flashes the taskbar to prompt the user to give Chrome foreground, which keeps ChatGPT/Grok rendering.
 
 When this skill is available, read `skills/openadviser/SKILL.md` and use its `scripts/openadviser.js` wrapper. The wrapper builds the adviser prompt, validates context quality, starts the bridge if needed, sends the prompt, reads answer snapshots, and waits for completion when requested.
 

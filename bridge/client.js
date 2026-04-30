@@ -479,3 +479,4 @@ Options:
   --quiet                     Suppress progress messages.
 `);
 }
+

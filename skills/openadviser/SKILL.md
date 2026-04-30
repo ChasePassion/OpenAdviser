@@ -195,7 +195,7 @@ The `send` command starts the local bridge if needed, submits the prompt to the 
 
 The worker window is positioned automatically: a small popup at the bottom-right of the primary screen's available work area, leaving a margin above the Windows taskbar or equivalent system shelf. Do not pass manual window geometry; the tool owns this placement.
 
-`read` always re-activates the run's worker window before extracting text. `wait` does this on every polling cycle because it repeatedly calls `read`. Treat this as the default pin substitute: while a long answer is generating, keep `wait` running so the small worker window periodically returns to the foreground and gives ChatGPT/Grok an active visible tab to continue rendering in.
+`read` always re-activates the run's worker window before extracting text. `wait` does this on every polling cycle because it repeatedly calls `read`. The extension uses `drawAttention` to flash the taskbar when the worker window is not in the foreground, prompting the user to switch to Chrome. Keep `wait` running so the periodic re-activation gives ChatGPT/Grok a visible tab to continue rendering in.
 
 Read the current answer snapshot later:
 
