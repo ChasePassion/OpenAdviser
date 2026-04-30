@@ -130,9 +130,17 @@ async function wait(args) {
 
   const timeoutMs = numberFlag(flags.timeout, 600000);
   const intervalMs = Math.max(1000, numberFlag(flags.interval, 5000));
+  const initialDelayMs = Math.max(0, numberFlag(flags["initial-delay"], 60000));
   const deadline = Date.now() + timeoutMs;
   let lastTask = null;
   let attempt = 0;
+
+  if (initialDelayMs > 0 && Date.now() + initialDelayMs < deadline) {
+    if (!flags.quiet && !flags.text && !flags.json) {
+      console.error(`[client] initial delay ${initialDelayMs}ms before first read poll...`);
+    }
+    await delay(initialDelayMs);
+  }
 
   while (Date.now() < deadline) {
     attempt += 1;
